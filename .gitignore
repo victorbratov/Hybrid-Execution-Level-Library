@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+*.o
+hell
+AGENTS.md
+.cache/
+include/
+doctest_*.log
+logs/
+metrics/
+docs/doxygen/
+tmp/
+
+# OS-specific
+.DS_Store

@@ -1,0 +1,17 @@
+site_name: H.E.L.L. Library Documentation
+theme:
+  name: material
+  palette:
+    scheme: slate
+
+plugins:
+  - search
+  - mkdoxy:
+      projects:
+        hell_api:
+          src-dirs: out
+          full-doc: True
+          doxy-cfg:
+            FILE_PATTERNS: "*.hpp *.cpp"
+            EXTRACT_ALL: NO
+            CLANG_ASSISTED_PARSING: YES
