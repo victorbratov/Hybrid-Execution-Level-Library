@@ -1,0 +1,10 @@
+# Build artifacts
+build/
+*.o
+hell
+GEMINI.md
+.cache/
+compile_commands.json
+
+# OS-specific
+.DS_Store
