@@ -1,38 +1,27 @@
-# justfile
-
-# Compiler and flags
 CXX      := "mpic++"
-CXXFLAGS := "-std=c++17 -Wall -Wextra -I./include"
+CXXFLAGS := "-std=c++17 -Wall -Wextra -O3 -I./include"
 
-# Build artifacts
-TARGET    := "hell"
-BUILD_DIR := "build"
+OUT_DIR    := "out"
+BUILD_DIR  := "build"
+SINGLE_HDR := 'out/hell.hpp'
+ENTRY_HDR  := "src/main.hpp"
 
-# Default recipe: build the project
-default: build
+default: test
 
-# Build recipe: compiles and links the project
-build:
-	@echo "=== COMPILING ==="
+bundle:
+	@echo "=== BUNDLING LIBRARY ==="
+	@mkdir -p {{OUT_DIR}}
+	python3 -m quom {{ENTRY_HDR}} {{SINGLE_HDR}}
+
+test: bundle
+	@echo "=== BUILDING TEST RUNNER ==="
 	@mkdir -p {{BUILD_DIR}}
-	@# Use find to get all .cpp files and execute a shell command for each.
-	@# This is a very robust way to handle compilation in just.
-	@find src -name "*.cpp" -exec sh -c ' \
-	    SOURCE="$0"; \
-	    OBJ_NAME=$(basename "$SOURCE" .cpp).o; \
-	    OBJ_PATH="{{BUILD_DIR}}/$OBJ_NAME"; \
-	    echo "  CXX   $SOURCE -> $OBJ_PATH"; \
-	    {{CXX}} {{CXXFLAGS}} -c "$SOURCE" -o "$OBJ_PATH" \
-	' {} \;
+	{{CXX}} {{CXXFLAGS}} -I{{OUT_DIR}} -I. tests/*.cpp -o {{BUILD_DIR}}/test_runner
+	@echo "\n=== RUNNING TESTS ==="
+	./{{BUILD_DIR}}/test_runner
 
-	@echo "\n=== LINKING ==="
-	@# Find all object files and link them.
-	@find {{BUILD_DIR}} -name '*.o' | xargs {{CXX}} {{CXXFLAGS}} -o {{TARGET}}
-	@echo "  LINK  {{TARGET}}"
-	@echo "\nBuild complete."
-
-# Clean recipe
 clean:
-	@echo "Cleaning project..."
+	@echo "Cleaning up..."
 	@rm -rf {{BUILD_DIR}}
-	@rm -f {{TARGET}}
+	@rm -rf {{OUT_DIR}}
+	@echo "Done."

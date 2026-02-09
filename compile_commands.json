@@ -1,0 +1,21 @@
+[
+  {
+    "file": "tests/test_main.cpp",
+    "arguments": [
+      "clang++",
+      "-std=c++17",
+      "-Wall",
+      "-Wextra",
+      "-O3",
+      "-I./include",
+      "-Iout",
+      "-I.",
+      "tests/test_main.cpp",
+      "-o",
+      "build/test_runner",
+      "-I/usr/local/Cellar/open-mpi/5.0.9/include"
+    ],
+    "directory": "/Users/viktor/hell",
+    "output": "build/test_runner"
+  }
+]

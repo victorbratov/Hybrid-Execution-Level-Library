@@ -4,7 +4,7 @@ build/
 hell
 GEMINI.md
 .cache/
-compile_commands.json
+include/
 
 # OS-specific
 .DS_Store
