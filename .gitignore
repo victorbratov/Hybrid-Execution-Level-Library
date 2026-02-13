@@ -2,9 +2,10 @@
 build/
 *.o
 hell
-GEMINI.md
+AGENTS.md
 .cache/
 include/
+doctest_*.log
 
 # OS-specific
 .DS_Store

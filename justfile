@@ -1,10 +1,15 @@
 CXX      := "mpic++"
-CXXFLAGS := "-std=c++17 -Wall -Wextra -O3 -I./include"
+CXXFLAGS := "-std=c++20 -Wall -Wextra -O3 -I./include -I. -I./out"
 
-OUT_DIR    := "out"
-BUILD_DIR  := "build"
-SINGLE_HDR := 'out/hell.hpp'
-ENTRY_HDR  := "src/main.hpp"
+OUT_DIR     := "out"
+BUILD_DIR   := "build"
+SINGLE_HDR  := "out/hell.hpp"
+ENTRY_HDR   := "src/main.hpp"
+
+TEST_SRC     := "tests/*.cpp"
+TEST_BIN     := "build/test_runner"
+MPI_TEST_SRC := "mpi_tests/*.cpp"
+MPI_TEST_BIN := "build/mpi_runner"
 
 default: test
 
@@ -14,14 +19,31 @@ bundle:
 	python3 -m quom {{ENTRY_HDR}} {{SINGLE_HDR}}
 
 test: bundle
-	@echo "=== BUILDING TEST RUNNER ==="
+	@echo "=== BUILDING STANDARD TESTS ==="
 	@mkdir -p {{BUILD_DIR}}
-	{{CXX}} {{CXXFLAGS}} -I{{OUT_DIR}} -I. tests/*.cpp -o {{BUILD_DIR}}/test_runner
-	@echo "\n=== RUNNING TESTS ==="
-	./{{BUILD_DIR}}/test_runner
+	{{CXX}} {{CXXFLAGS}} {{TEST_SRC}} -o {{TEST_BIN}}
+	@echo "\n=== RUNNING STANDARD TESTS ==="
+	./{{TEST_BIN}}
+
+test-mpi: bundle
+	@echo "=== BUILDING MPI TESTS ==="
+	@mkdir -p {{BUILD_DIR}}
+	{{CXX}} {{CXXFLAGS}} {{MPI_TEST_SRC}} -o {{MPI_TEST_BIN}}
+	@echo "\n=== RUNNING MPI TESTS (np=2) ==="
+	mpirun -np 2 --oversubscribe ./{{MPI_TEST_BIN}}
+
+test-all: test-mpi test
 
 clean:
 	@echo "Cleaning up..."
 	@rm -rf {{BUILD_DIR}}
 	@rm -rf {{OUT_DIR}}
 	@echo "Done."
+
+docs: bundle
+	@echo "=== STARTING DOCUMENTATION SERVER ==="
+	python3 -m mkdocs serve
+
+docs-build: bundle
+	@echo "=== BUILDING STATIC DOCS ==="
+	python3 -m mkdocs build

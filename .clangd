@@ -1,0 +1,9 @@
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+CompileFlags:
+  Add: [
+    "-Wno-unused-function",
+    "-Wno-header-hygiene",
+    "-DHELL_IMPLEMENTATION"
+  ]

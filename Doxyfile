@@ -1,0 +1,91 @@
+#---------------------------------------------------------------------------
+# Project related configuration
+#---------------------------------------------------------------------------
+
+PROJECT_NAME           = "My Project"
+PROJECT_BRIEF          = "Project documentation"
+OUTPUT_DIRECTORY       = docs/doxygen
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+#---------------------------------------------------------------------------
+# Input
+#---------------------------------------------------------------------------
+
+INPUT                  = src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.c *.cpp *.h *.hpp *.go
+USE_MDFILE_AS_MAINPAGE = README.md
+
+#---------------------------------------------------------------------------
+# Markdown / formatting (IMPORTANT)
+#---------------------------------------------------------------------------
+
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+BUILTIN_STL_SUPPORT    = YES
+
+# This is critical for newline & paragraph behavior
+JAVADOC_AUTOBRIEF      = NO
+
+# Allow Markdown fenced code blocks
+MARKDOWN_ID_STYLE      = GITHUB
+
+#---------------------------------------------------------------------------
+# Comment handling
+#---------------------------------------------------------------------------
+
+MULTILINE_CPP_IS_BRIEF = NO
+QT_AUTOBRIEF           = NO
+INHERIT_DOCS           = YES
+
+# Keep formatting predictable
+TAB_SIZE               = 4
+ALIASES                =
+
+#---------------------------------------------------------------------------
+# Extraction options
+#---------------------------------------------------------------------------
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+
+#---------------------------------------------------------------------------
+# Warnings
+#---------------------------------------------------------------------------
+
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+
+#---------------------------------------------------------------------------
+# HTML output (MkDocs-compatible)
+#---------------------------------------------------------------------------
+
+HTML_OUTPUT            = .
+HTML_DYNAMIC_MENUS     = YES
+DISABLE_INDEX          = NO
+GENERATE_TREEVIEW      = NO
+
+# Prevent Doxygen from “reflowing” text
+HTML_EXTRA_STYLESHEET  =
+HTML_EXTRA_FILES       =
+
+#---------------------------------------------------------------------------
+# Diagrams (optional)
+#---------------------------------------------------------------------------
+
+HAVE_DOT               = NO
+CLASS_DIAGRAMS         = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+
+#---------------------------------------------------------------------------
+# Misc
+#---------------------------------------------------------------------------
+
+QUIET                  = NO
+WARNINGS               = YES
+EXTRACT_ENUM_VALUES    = YES
