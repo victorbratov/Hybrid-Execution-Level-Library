@@ -13,9 +13,10 @@ TEST_CASE("Local farm processes all items across workers") {
 	auto in  = transport::make_local_channel<int>(128);
 	auto out = transport::make_local_channel<int>(128);
 
-	core::Farm<int, int> farm([](int x) {
+	core::FarmExecutor<int, int> farm([](int x) {
 		return x * x;
-	}, 4);
+	},
+	                                  4);
 
 	std::jthread producer([&](std::stop_token st) {
 		for (int i = 0; i < 100 && !st.stop_requested(); ++i) {

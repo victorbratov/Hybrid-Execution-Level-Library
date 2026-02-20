@@ -11,7 +11,7 @@ namespace hell::core {
  * the work is distributed among N workers.
  */
 template <typename In, typename Out>
-class Farm {
+class FarmExecutor {
       public:
 	/**
 	 * \brief Creates a new FarmExecutor.
@@ -19,7 +19,7 @@ class Farm {
 	 *  \param num_workers The number of workers to use.
 	 *  \return A new FarmExecutor.
 	 */
-	Farm(std::function<Out(In)> worker, size_t num_workers) : worker_(std::move(worker)), num_workers_(num_workers) {
+	FarmExecutor(std::function<Out(In)> worker, size_t num_workers) : worker_(std::move(worker)), num_workers_(num_workers) {
 	}
 
 	/**

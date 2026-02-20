@@ -363,13 +363,13 @@ namespace hell::core {
  *
  * The work is defined by a function that takes an input item and returns an output item.
  */
-template <typename In, typename Out>
-class Stage {
+template <hell::transport::Serializable In, hell::transport::Serializable Out>
+class StageExecutor {
       public:
 	using InputType  = In;
 	using OutputType = Out;
 
-	explicit Stage(std::function<Out(In)> fn) : work_(std::move(fn)) {
+	explicit StageExecutor(std::function<Out(In)> fn) : work_(std::move(fn)) {
 	}
 
 	void run(transport::ChannelReader<In>&  input,
@@ -394,10 +394,10 @@ class Stage {
 /**
  * \brief A source stage: no input channel
  */
-template <typename Out>
-class SourceStage {
+template <hell::transport::Serializable Out>
+class SourceExecutor {
       public:
-	explicit SourceStage(std::function<std::optional<Out>()> generator) : generator_(std::move(generator)) {
+	explicit SourceExecutor(std::function<std::optional<Out>()> generator) : generator_(std::move(generator)) {
 	}
 
 	void run(transport::ChannelWriter<Out>& output, std::stop_token st) {
@@ -418,10 +418,10 @@ class SourceStage {
 /**
  * \brief A sink stage: no output channel
  */
-template <typename In>
-class SinkStage {
+template <hell::transport::Serializable In>
+class SinkExecutor {
       public:
-	explicit SinkStage(std::function<void(In)> consumer) : consumer_(std::move(consumer)) {
+	explicit SinkExecutor(std::function<void(In)> consumer) : consumer_(std::move(consumer)) {
 	}
 
 	void run(transport::ChannelReader<In>& input, std::stop_token st) {
@@ -449,7 +449,7 @@ namespace hell::core {
  * the work is distributed among N workers.
  */
 template <typename In, typename Out>
-class Farm {
+class FarmExecutor {
       public:
 	/**
 	 * \brief Creates a new FarmExecutor.
@@ -457,7 +457,7 @@ class Farm {
 	 *  \param num_workers The number of workers to use.
 	 *  \return A new FarmExecutor.
 	 */
-	Farm(std::function<Out(In)> worker, size_t num_workers) : worker_(std::move(worker)), num_workers_(num_workers) {
+	FarmExecutor(std::function<Out(In)> worker, size_t num_workers) : worker_(std::move(worker)), num_workers_(num_workers) {
 	}
 
 	/**
@@ -498,4 +498,278 @@ class Farm {
 };
 
 } // namespace hell::core
+
+namespace hell::skeletons {
+template <hell::transport::Serializable In, hell::transport::Serializable Out>
+class Stage {
+      public:
+	using InputType  = In;
+	using OutputType = Out;
+
+	explicit Stage(std::function<Out(In)> fn, bool ordered = false) : work_(std::move(fn)), ordered_(ordered) {
+	}
+
+	const auto& work_function() {
+		return work_;
+	}
+
+      private:
+	std::function<Out(In)> work_;
+	bool                   ordered_ = false;
+};
+} // namespace hell::skeletons
+
+namespace hell::skeletons {
+struct FarmPolicy {
+	size_t num_workers = 0;
+
+	enum class Distribution {
+		LOCAL,
+		DISTRIBUTED,
+		HYBRID,
+		AUTO
+	};
+
+	Distribution distribution = Distribution::AUTO;
+
+	size_t queue_capacity = 1024;
+};
+
+template <hell::transport::Serializable In, hell::transport::Serializable Out>
+class Farm {
+      public:
+	using InputType  = In;
+	using OutputType = Out;
+
+	Farm(std::function<Out(In)> work_function, size_t num_workers = 0) : work_(std::move(work_function)), policy_{.num_workers = num_workers} {
+	}
+
+	Farm(std::function<Out(In)> work_function, FarmPolicy policy) : work_(std::move(work_function)), policy_(std::move(policy)) {
+	}
+
+	const auto& work_function() {
+		return work_;
+	}
+
+	const auto& policy() {
+		return policy_;
+	}
+
+      private:
+	std::function<Out(In)> work_;
+	FarmPolicy             policy_;
+};
+} // namespace hell::skeletons
+
+namespace hell::skeletons {
+template <hell::transport::Serializable Out>
+class Source {
+      public:
+	using InputType  = void;
+	using OutputType = Out;
+
+	explicit Source(std::function<std::optional<Out>()> generator) : generator_(std::move(generator)) {
+	}
+
+	const auto& generator_function() {
+		return generator_;
+	}
+
+      private:
+	std::function<std::optional<Out>()> generator_;
+};
+} // namespace hell::skeletons
+
+namespace hell::skeletons {
+template <hell::transport::Serializable In>
+class Sink {
+      public:
+	using InputType  = In;
+	using OutputType = void;
+
+	explicit Sink(std::function<void(In)> consumer) : consumer_(std::move(consumer)) {
+	}
+
+	const auto& consumer_function() {
+		return consumer_;
+	}
+
+      private:
+	std::function<void(In)> consumer_;
+};
+} // namespace hell::skeletons
+
+#include <memory>
+#include <concepts>
+#include <ostream>
+#include <span>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <typeindex>
+#include <utility>
+#include <vector>
+
+namespace hell::skeletons {
+
+template <typename T>
+struct LogicalPlanNodeKindTag;
+
+class LogicalPlanNode {
+      public:
+	enum class Kind {
+		SOURCE,
+		STAGE,
+		FARM,
+		SINK,
+		UNKNOWN
+	};
+
+	template <typename Skeleton>
+	static LogicalPlanNode from(Skeleton skeleton) {
+		using NodeT = std::remove_cvref_t<Skeleton>;
+		return LogicalPlanNode(std::move(skeleton), classify<NodeT>());
+	}
+
+	LogicalPlanNode(const LogicalPlanNode&)            = default;
+	LogicalPlanNode(LogicalPlanNode&&) noexcept        = default;
+	LogicalPlanNode& operator=(const LogicalPlanNode&) = default;
+	LogicalPlanNode& operator=(LogicalPlanNode&&) noexcept = default;
+	~LogicalPlanNode()                                     = default;
+
+	[[nodiscard]] Kind kind() const {
+		return kind_;
+	}
+
+	[[nodiscard]] std::type_index concrete_type() const {
+		return concrete_type_;
+	}
+
+	[[nodiscard]] std::type_index input_type() const {
+		return input_type_;
+	}
+
+	[[nodiscard]] std::type_index output_type() const {
+		return output_type_;
+	}
+
+	[[nodiscard]] std::string_view debug_name() const {
+		return debug_name_;
+	}
+
+	template <typename Skeleton>
+	[[nodiscard]] bool holds() const {
+		return model_ && model_->concrete_type() == std::type_index(typeid(std::remove_cvref_t<Skeleton>));
+	}
+
+	template <typename Skeleton>
+	[[nodiscard]] const std::remove_cvref_t<Skeleton>* as() const {
+		if (!holds<Skeleton>()) {
+			return nullptr;
+		}
+		return &static_cast<const Model<std::remove_cvref_t<Skeleton>>&>(*model_).value;
+	}
+
+      private:
+	struct Concept {
+		virtual ~Concept() = default;
+
+		[[nodiscard]] virtual std::type_index concrete_type() const = 0;
+	};
+
+	template <typename Skeleton>
+	struct Model final : Concept {
+		explicit Model(Skeleton v) : value(std::move(v)) {
+		}
+
+		[[nodiscard]] std::type_index concrete_type() const override {
+			return std::type_index(typeid(Skeleton));
+		}
+
+		Skeleton value;
+	};
+
+	template <typename Skeleton>
+	explicit LogicalPlanNode(Skeleton skeleton, Kind kind)
+	    : kind_(kind),
+	      concrete_type_(typeid(std::remove_cvref_t<Skeleton>)),
+	      input_type_(typeid(typename std::remove_cvref_t<Skeleton>::InputType)),
+	      output_type_(typeid(typename std::remove_cvref_t<Skeleton>::OutputType)),
+	      debug_name_(typeid(std::remove_cvref_t<Skeleton>).name()),
+	      model_(std::make_shared<Model<std::remove_cvref_t<Skeleton>>>(std::move(skeleton))) {
+	}
+
+	template <typename Skeleton>
+	static consteval Kind classify() {
+		return LogicalPlanNodeKindTag<std::remove_cvref_t<Skeleton>>::value;
+	}
+
+	Kind                    kind_          = Kind::UNKNOWN;
+	std::type_index         concrete_type_ = typeid(void);
+	std::type_index         input_type_    = typeid(void);
+	std::type_index         output_type_   = typeid(void);
+	std::string_view        debug_name_;
+	std::shared_ptr<Concept> model_;
+};
+
+template <typename T>
+struct LogicalPlanNodeKindTag {
+	static constexpr LogicalPlanNode::Kind value = LogicalPlanNode::Kind::UNKNOWN;
+};
+
+template <hell::transport::Serializable Out>
+struct LogicalPlanNodeKindTag<Source<Out>> {
+	static constexpr LogicalPlanNode::Kind value = LogicalPlanNode::Kind::SOURCE;
+};
+
+template <hell::transport::Serializable In, hell::transport::Serializable Out>
+struct LogicalPlanNodeKindTag<Stage<In, Out>> {
+	static constexpr LogicalPlanNode::Kind value = LogicalPlanNode::Kind::STAGE;
+};
+
+template <hell::transport::Serializable In, hell::transport::Serializable Out>
+struct LogicalPlanNodeKindTag<Farm<In, Out>> {
+	static constexpr LogicalPlanNode::Kind value = LogicalPlanNode::Kind::FARM;
+};
+
+template <hell::transport::Serializable In>
+struct LogicalPlanNodeKindTag<Sink<In>> {
+	static constexpr LogicalPlanNode::Kind value = LogicalPlanNode::Kind::SINK;
+};
+
+[[nodiscard]] constexpr std::string_view logical_plan_node_kind_name(LogicalPlanNode::Kind kind) {
+	switch (kind) {
+		case LogicalPlanNode::Kind::SOURCE:
+			return "SOURCE";
+		case LogicalPlanNode::Kind::STAGE:
+			return "STAGE";
+		case LogicalPlanNode::Kind::FARM:
+			return "FARM";
+		case LogicalPlanNode::Kind::SINK:
+			return "SINK";
+		default:
+			return "UNKNOWN";
+	}
+}
+
+[[nodiscard]] inline std::string describe_node(const LogicalPlanNode& node) {
+	std::ostringstream stream;
+	stream << "kind=" << logical_plan_node_kind_name(node.kind()) << ", concrete=" << node.debug_name() << ", input="
+	       << node.input_type().name() << ", output=" << node.output_type().name();
+	return stream.str();
+}
+
+inline void print_plan(std::ostream& out, std::span<const LogicalPlanNode> plan) {
+	out << "Logical plan (" << plan.size() << " nodes)\n";
+	for (size_t i = 0; i < plan.size(); ++i) {
+		out << "[" << i << "] " << describe_node(plan[i]) << '\n';
+	}
+}
+
+inline void print_plan(std::ostream& out, const std::vector<LogicalPlanNode>& plan) {
+	print_plan(out, std::span<const LogicalPlanNode>(plan.data(), plan.size()));
+}
+
+} // namespace hell::skeletons
 

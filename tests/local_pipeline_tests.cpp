@@ -15,24 +15,24 @@ TEST_CASE("Local pipeline source->doubler->squarer->sink processes all items") {
 	auto c2 = transport::make_local_channel<int>(64);
 	auto c3 = transport::make_local_channel<int>(64);
 
-	int counter = 0;
-	core::SourceStage<int> source([&counter]() -> std::optional<int> {
+	int                       counter = 0;
+	core::SourceExecutor<int> source([&counter]() -> std::optional<int> {
 		if (counter >= 100) {
 			return std::nullopt;
 		}
 		return counter++;
 	});
 
-	core::Stage<int, int> doubler([](int x) {
+	core::StageExecutor<int, int> doubler([](int x) {
 		return x * 2;
 	});
-	core::Stage<int, int> squarer([](int x) {
+	core::StageExecutor<int, int> squarer([](int x) {
 		return x * x;
 	});
 
-	std::vector<int> results;
-	std::mutex       results_mutex;
-	core::SinkStage<int> sink([&](int x) {
+	std::vector<int>        results;
+	std::mutex              results_mutex;
+	core::SinkExecutor<int> sink([&](int x) {
 		std::lock_guard lock(results_mutex);
 		results.push_back(x);
 	});

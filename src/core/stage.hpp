@@ -1,4 +1,5 @@
 #pragma once
+#include "../transport/serialization.hpp"
 #include "../transport/channel.hpp"
 #include <functional>
 #include <concepts>
@@ -11,13 +12,13 @@ namespace hell::core {
  *
  * The work is defined by a function that takes an input item and returns an output item.
  */
-template <typename In, typename Out>
-class Stage {
+template <hell::transport::Serializable In, hell::transport::Serializable Out>
+class StageExecutor {
       public:
 	using InputType  = In;
 	using OutputType = Out;
 
-	explicit Stage(std::function<Out(In)> fn) : work_(std::move(fn)) {
+	explicit StageExecutor(std::function<Out(In)> fn) : work_(std::move(fn)) {
 	}
 
 	void run(transport::ChannelReader<In>&  input,
@@ -42,10 +43,10 @@ class Stage {
 /**
  * \brief A source stage: no input channel
  */
-template <typename Out>
-class SourceStage {
+template <hell::transport::Serializable Out>
+class SourceExecutor {
       public:
-	explicit SourceStage(std::function<std::optional<Out>()> generator) : generator_(std::move(generator)) {
+	explicit SourceExecutor(std::function<std::optional<Out>()> generator) : generator_(std::move(generator)) {
 	}
 
 	void run(transport::ChannelWriter<Out>& output, std::stop_token st) {
@@ -66,10 +67,10 @@ class SourceStage {
 /**
  * \brief A sink stage: no output channel
  */
-template <typename In>
-class SinkStage {
+template <hell::transport::Serializable In>
+class SinkExecutor {
       public:
-	explicit SinkStage(std::function<void(In)> consumer) : consumer_(std::move(consumer)) {
+	explicit SinkExecutor(std::function<void(In)> consumer) : consumer_(std::move(consumer)) {
 	}
 
 	void run(transport::ChannelReader<In>& input, std::stop_token st) {
