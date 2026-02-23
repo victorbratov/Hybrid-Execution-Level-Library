@@ -7,6 +7,10 @@
 
 namespace hell::transport {
 
+/**
+ * \brief Bounded blocking queue with close semantics and stop-token aware waits.
+ * \tparam T Stored item type.
+ */
 template <typename T>
 class ConcurrentQueue {
       public:

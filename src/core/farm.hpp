@@ -17,7 +17,6 @@ class FarmExecutor {
 	 * \brief Creates a new FarmExecutor.
 	 *  \param worker The work to be done by the workers.
 	 *  \param num_workers The number of workers to use.
-	 *  \return A new FarmExecutor.
 	 */
 	FarmExecutor(std::function<Out(In)> worker, size_t num_workers) : worker_(std::move(worker)), num_workers_(num_workers) {
 	}
@@ -26,6 +25,7 @@ class FarmExecutor {
 	 * \brief Runs the FarmExecutor.
 	 *  \param input The input channel.
 	 *  \param output The output channel.
+	 *  \param st Stop token controlling cooperative cancellation.
 	 */
 	void run(transport::ChannelReader<In>&  input,
 	         transport::ChannelWriter<Out>& output,

@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <sstream>
+#include <stop_token>
 #include <string>
 #include <typeindex>
 #include <vector>
@@ -66,4 +67,36 @@ TEST_CASE("Plan debug print includes per-node details") {
 	CHECK(text.find("[2] kind=SINK") != std::string::npos);
 	CHECK(text.find(std::string("input=") + typeid(int).name()) != std::string::npos);
 	CHECK(text.find(std::string("output=") + typeid(int).name()) != std::string::npos);
+}
+
+TEST_CASE("LogicalPlanNode executes stage through erased channels") {
+	using namespace hell;
+
+	auto stage_node = skeletons::LogicalPlanNode::from(skeletons::Stage<int, int>([](int x) {
+		return x * 3;
+	}));
+
+	auto in  = transport::make_local_channel<transport::ByteBuffer>(16);
+	auto out = transport::make_local_channel<transport::ByteBuffer>(16);
+
+	CHECK(in.writer->send(transport::serialize<int>(2)));
+	CHECK(in.writer->send(transport::serialize<int>(4)));
+	CHECK(in.writer->send(transport::serialize<int>(7)));
+	in.writer->close();
+
+	stage_node.execute(in.reader.get(), out.writer.get(), std::stop_token{});
+
+	std::vector<int> values;
+	for (;;) {
+		auto raw = out.reader->recv();
+		if (!raw.has_value()) {
+			break;
+		}
+		values.push_back(transport::deserialize<int>(std::move(*raw)));
+	}
+
+	REQUIRE(values.size() == 3);
+	CHECK(values[0] == 6);
+	CHECK(values[1] == 12);
+	CHECK(values[2] == 21);
 }

@@ -8,6 +8,9 @@
 
 namespace hell::transport {
 
+/**
+ * \brief Raw byte container used as serialized transport payload.
+ */
 using ByteBuffer = std::vector<std::byte>;
 
 /**

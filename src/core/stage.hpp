@@ -18,9 +18,19 @@ class StageExecutor {
 	using InputType  = In;
 	using OutputType = Out;
 
+	/**
+	 * \brief Creates a stage executor from a worker function.
+	 * \param fn Callable applied to each input item.
+	 */
 	explicit StageExecutor(std::function<Out(In)> fn) : work_(std::move(fn)) {
 	}
 
+	/**
+	 * \brief Runs the stage until input closes or cancellation is requested.
+	 * \param input Input channel.
+	 * \param output Output channel.
+	 * \param st Stop token controlling cooperative cancellation.
+	 */
 	void run(transport::ChannelReader<In>&  input,
 	         transport::ChannelWriter<Out>& output,
 	         std::stop_token                st) {
@@ -46,9 +56,18 @@ class StageExecutor {
 template <hell::transport::Serializable Out>
 class SourceExecutor {
       public:
+	/**
+	 * \brief Creates a source executor from a generator function.
+	 * \param generator Callable returning next item or `std::nullopt` to stop.
+	 */
 	explicit SourceExecutor(std::function<std::optional<Out>()> generator) : generator_(std::move(generator)) {
 	}
 
+	/**
+	 * \brief Runs the source until generator ends or cancellation is requested.
+	 * \param output Output channel.
+	 * \param st Stop token controlling cooperative cancellation.
+	 */
 	void run(transport::ChannelWriter<Out>& output, std::stop_token st) {
 		while (!st.stop_requested()) {
 			auto item = generator_();
@@ -70,9 +89,18 @@ class SourceExecutor {
 template <hell::transport::Serializable In>
 class SinkExecutor {
       public:
+	/**
+	 * \brief Creates a sink executor from a consumer function.
+	 * \param consumer Callable invoked for each input item.
+	 */
 	explicit SinkExecutor(std::function<void(In)> consumer) : consumer_(std::move(consumer)) {
 	}
 
+	/**
+	 * \brief Runs the sink until input closes or cancellation is requested.
+	 * \param input Input channel.
+	 * \param st Stop token controlling cooperative cancellation.
+	 */
 	void run(transport::ChannelReader<In>& input, std::stop_token st) {
 		while (!st.stop_requested()) {
 			auto item = input.recv(st);

@@ -6,18 +6,40 @@
 
 namespace hell::transport {
 
+/**
+ * \brief Abstract writer endpoint of a typed channel.
+ * \tparam T Item type sent through the channel.
+ */
 template <typename T>
 class ChannelWriter {
       public:
+	/** \brief Virtual destructor. */
 	virtual ~ChannelWriter()                           = default;
+	/**
+	 * \brief Sends one item to the channel.
+	 * \param item Item to send.
+	 * \param st Stop token for cooperative cancellation.
+	 * \return True on success, false if closed/cancelled.
+	 */
 	virtual bool send(T item, std::stop_token st = {}) = 0;
+	/** \brief Closes the writer and signals end-of-stream. */
 	virtual void close()                               = 0;
 };
 
+/**
+ * \brief Abstract reader endpoint of a typed channel.
+ * \tparam T Item type received from the channel.
+ */
 template <typename T>
 class ChannelReader {
       public:
+	/** \brief Virtual destructor. */
 	virtual ~ChannelReader()                               = default;
+	/**
+	 * \brief Receives one item from the channel.
+	 * \param st Stop token for cooperative cancellation.
+	 * \return Received item or `std::nullopt` when stream ends/cancels.
+	 */
 	virtual std::optional<T> recv(std::stop_token st = {}) = 0;
 };
 

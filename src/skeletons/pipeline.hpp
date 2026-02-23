@@ -4,9 +4,16 @@
 
 namespace hell::detail {
 
+/**
+ * \brief Compile-time predicate for stage composability (`A::OutputType == B::InputType`).
+ */
 template <typename A, typename B>
 concept Chainable = std::is_same_v<typename A::OutputType, typename B::InputType>;
 
+/**
+ * \brief Validates a sequence of stages is chainable at compile time.
+ * \return True when all neighboring stages are chainable.
+ */
 template <typename... Stages>
 constexpr bool validate_chain() {
 	if constexpr (sizeof...(Stages) <= 1) {
@@ -30,20 +37,37 @@ constexpr bool validate_chain() {
 
 namespace hell::skeletons {
 
+/**
+ * \brief Typed immutable container of logically chained skeleton stages.
+ * \tparam Stages Stage types in execution order.
+ */
 template <typename... Stages>
 class Pipeline {
+      public:
 	static_assert(detail::validate_chain<Stages...>(), "Stages must be chainable");
 
 	using InputType  = typename std::tuple_element_t<0, std::tuple<Stages...>>::InputType;
 	using OutputType = typename std::tuple_element_t<sizeof...(Stages) - 1, std::tuple<Stages...>>::OutputType;
 
+	/**
+	 * \brief Constructs a pipeline from stage instances.
+	 * \param stages Stage values in workflow order.
+	 */
 	explicit Pipeline(Stages... stages) : stages_(std::move(stages)...) {
 	}
 
-	const auto& stages() {
+	/**
+	 * \brief Returns the internal tuple of stages.
+	 * \return Const reference to stored stages.
+	 */
+	[[nodiscard]] const auto& stages() const {
 		return stages_;
 	}
 
+	/**
+	 * \brief Number of stages in this pipeline type.
+	 * \return Compile-time pipeline size.
+	 */
 	static constexpr size_t pipeline_size() {
 		return sizeof...(Stages);
 	}
