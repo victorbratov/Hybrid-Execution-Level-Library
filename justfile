@@ -10,6 +10,8 @@ TEST_SRC     := "tests/*.cpp"
 TEST_BIN     := "build/test_runner"
 MPI_TEST_SRC := "mpi_tests/*.cpp"
 MPI_TEST_BIN := "build/mpi_runner"
+EXAMPLE_SOBEL_SRC := "examples/sobel_edge_detection.cpp"
+EXAMPLE_SOBEL_BIN := "build/sobel_edge_detection"
 
 default: test
 
@@ -47,3 +49,12 @@ docs: bundle
 docs-build: bundle
 	@echo "=== BUILDING STATIC DOCS ==="
 	python3 -m mkdocs build
+
+example-sobel: bundle
+	@echo "=== BUILDING SOBEL EXAMPLE ==="
+	@mkdir -p {{BUILD_DIR}}
+	{{CXX}} {{CXXFLAGS}} {{EXAMPLE_SOBEL_SRC}} -o {{EXAMPLE_SOBEL_BIN}}
+
+run-example-sobel: example-sobel
+	@echo "=== RUNNING SOBEL EXAMPLE (np=2) ==="just
+	mpirun -np 2 --oversubscribe ./{{EXAMPLE_SOBEL_BIN}} input.pgm output.pgm
