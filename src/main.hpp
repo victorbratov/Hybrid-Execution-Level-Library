@@ -11,3 +11,7 @@
 #include "./payload.hpp"
 #include "./node_executor.hpp"
 #include "./engine.hpp"
+#include "./logger.hpp"
+#include "./metrics.hpp"
+#include "./monitor.hpp"
+#include "./plan_pretty_print.hpp"

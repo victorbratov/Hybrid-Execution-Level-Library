@@ -6,6 +6,9 @@ AGENTS.md
 .cache/
 include/
 doctest_*.log
+logs/
+metrics/
+docs/
 
 # OS-specific
 .DS_Store
