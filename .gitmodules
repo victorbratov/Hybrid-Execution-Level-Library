@@ -1,0 +1,3 @@
+[submodule "hell-dashboard"]
+	path = hell-dashboard
+	url = git@github.com:victorbratov/hell-dashboard.git

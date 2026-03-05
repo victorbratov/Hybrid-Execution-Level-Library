@@ -1716,6 +1716,8 @@ class MonitorCollector {
 		logger().debug("Monitor ← Node {}: CPU {:.1f}%",
 		               nm.rank,
 		               nm.cpu_load * 100.0);
+
+		write_live_json();
 	}
 
 	void drain_remaining_metrics() {
@@ -1742,46 +1744,56 @@ class MonitorCollector {
 
 	void write_live_json() {
 		std::lock_guard lock(mtx_);
-		auto            file_path = output_dir_ / "monitor.json";
-		std::ofstream   f(file_path, std::ios::trunc);
 
-		f << "{\n  \"timestamp\": \"" << current_time_str() << "\",\n";
-		f << "  \"nodes\": [\n";
+		auto file_path = output_dir_ / "monitor.jsonl";
+
+		std::ofstream f(file_path, std::ios::app);
+		if (!f.is_open())
+			return;
+
+		f << "{\"timestamp\":\"" << current_time_str() << "\",\"nodes\":[";
+
 		for (int i = 0; i < world_size_; ++i) {
 			auto& nm = latest_[i];
-			f << "    {\n";
-			f << "      \"rank\": " << nm.rank << ",\n";
-			f << "      \"hw_threads\": " << nm.hw_threads << ",\n";
-			f << "      \"cpu_load\": " << nm.cpu_load << ",\n";
-			f << "      \"rss_bytes\": " << nm.rss_bytes << ",\n";
-			f << "      \"stages\": [\n";
+
+			f << "{"
+			  << "\"rank\":" << i << ","
+			  << "\"hw_threads\":" << nm.hw_threads << ","
+			  << "\"cpu_load\":" << nm.cpu_load << ","
+			  << "\"rss_bytes\":" << nm.rss_bytes << ","
+			  << "\"stages\":[";
+
 			for (size_t j = 0; j < nm.stages.size(); ++j) {
 				auto& s = nm.stages[j];
-				f << "        {\n";
-				f << "          \"stage_id\": " << s.stage_id << ",\n";
-				f << "          \"items_processed\": " << s.items_processed << ",\n";
-				f << "          \"items_received\": " << s.items_received << ",\n";
-				f << "          \"items_sent\": " << s.items_sent << ",\n";
-				f << "          \"bytes_received\": " << s.bytes_received << ",\n";
-				f << "          \"bytes_sent\": " << s.bytes_sent << ",\n";
-				f << "          \"processing_time_us\": " << s.processing_time_us << ",\n";
-				f << "          \"idle_time_us\": " << s.idle_time_us << ",\n";
-				f << "          \"mpi_send_time_us\": " << s.mpi_send_time_us << ",\n";
-				f << "          \"mpi_recv_time_us\": " << s.mpi_recv_time_us << ",\n";
-				f << "          \"active_workers\": " << s.active_workers << ",\n";
-				f << "          \"queue_depth\": " << s.queue_depth << "\n";
-				f << "        }";
+
+				f << "{"
+				  << "\"stage_id\":" << s.stage_id << ","
+				  << "\"items_processed\":" << s.items_processed << ","
+				  << "\"items_received\":" << s.items_received << ","
+				  << "\"items_sent\":" << s.items_sent << ","
+				  << "\"bytes_received\":" << s.bytes_received << ","
+				  << "\"bytes_sent\":" << s.bytes_sent << ","
+				  << "\"processing_time_us\":" << s.processing_time_us << ","
+				  << "\"idle_time_us\":" << s.idle_time_us << ","
+				  << "\"mpi_send_time_us\":" << s.mpi_send_time_us << ","
+				  << "\"mpi_recv_time_us\":" << s.mpi_recv_time_us << ","
+				  << "\"active_workers\":" << s.active_workers << ","
+				  << "\"queue_depth\":" << s.queue_depth
+				  << "}";
+
 				if (j + 1 < nm.stages.size())
 					f << ",";
-				f << "\n";
 			}
-			f << "      ]\n";
-			f << "    }";
+
+			f << "]}";
+
 			if (i + 1 < world_size_)
 				f << ",";
-			f << "\n";
 		}
-		f << "  ]\n}\n";
+
+		f << "]}\n";
+
+		f.flush();
 	}
 
 	void write_final_summary() {

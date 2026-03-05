@@ -12,6 +12,8 @@ MPI_TEST_SRC := "mpi_tests/*.cpp"
 MPI_TEST_BIN := "build/mpi_runner"
 EXAMPLE_SOBEL_SRC := "examples/sobel_edge_detection.cpp"
 EXAMPLE_SOBEL_BIN := "build/sobel_edge_detection"
+EXAMPLE_TELEMETRY_SRC := "examples/telemetry_stress_workflow.cpp"
+EXAMPLE_TELEMETRY_BIN := "build/telemetry_stress_workflow"
 
 default: test
 
@@ -58,3 +60,12 @@ example-sobel: bundle
 run-example-sobel: example-sobel
 	@echo "=== RUNNING SOBEL EXAMPLE (np=2) ==="just
 	mpirun -np 2 --oversubscribe ./{{EXAMPLE_SOBEL_BIN}} input.pgm output.pgm
+
+example-telemetry: bundle
+	@echo "=== BUILDING TELEMETRY STRESS EXAMPLE ==="
+	@mkdir -p {{BUILD_DIR}}
+	{{CXX}} {{CXXFLAGS}} {{EXAMPLE_TELEMETRY_SRC}} -o {{EXAMPLE_TELEMETRY_BIN}}
+
+run-example-telemetry np='4' items='20000' rounds='12000' threads='8' seed='1337' mins='30': example-telemetry
+	@echo "=== RUNNING TELEMETRY STRESS EXAMPLE (np={{np}}) ==="
+	mpirun -np {{np}} --oversubscribe ./{{EXAMPLE_TELEMETRY_BIN}} {{items}} {{rounds}} {{threads}} {{seed}} {{mins}}
