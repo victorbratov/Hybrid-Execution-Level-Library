@@ -27,17 +27,23 @@ class Planner {
 				best_node = 0;
 			} else {
 				if (world_size > 1) {
-					best_node = 1;
-					for (uint16_t node = 1; node < world_size; ++node) {
-						if (remaining_cores[node] > remaining_cores[best_node]) {
-							best_node = node;
+					// Prefer collocating with the previous stage to avoid MPI overhead
+					uint16_t prev_node = (i > 0) ? wp.stages[i - 1].assigned_node : 0;
+					if (remaining_cores[prev_node] > 0) {
+						best_node = prev_node;
+					} else {
+						// Fall back: pick the node with the most remaining cores
+						best_node = 1;
+						for (uint16_t node = 1; node < world_size; ++node) {
+							if (remaining_cores[node] > remaining_cores[best_node]) {
+								best_node = node;
+							}
 						}
 					}
 				} else {
 					best_node = 0;
 				}
 			}
-
 			sd.assigned_node    = best_node;
 			sd.assigned_threads = std::min((int)sd.concurrency, std::max(1, (int)remaining_cores[best_node]));
 

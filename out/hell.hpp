@@ -582,17 +582,23 @@ class Planner {
 				best_node = 0;
 			} else {
 				if (world_size > 1) {
-					best_node = 1;
-					for (uint16_t node = 1; node < world_size; ++node) {
-						if (remaining_cores[node] > remaining_cores[best_node]) {
-							best_node = node;
+					// Prefer collocating with the previous stage to avoid MPI overhead
+					uint16_t prev_node = (i > 0) ? wp.stages[i - 1].assigned_node : 0;
+					if (remaining_cores[prev_node] > 0) {
+						best_node = prev_node;
+					} else {
+						// Fall back: pick the node with the most remaining cores
+						best_node = 1;
+						for (uint16_t node = 1; node < world_size; ++node) {
+							if (remaining_cores[node] > remaining_cores[best_node]) {
+								best_node = node;
+							}
 						}
 					}
 				} else {
 					best_node = 0;
 				}
 			}
-
 			sd.assigned_node    = best_node;
 			sd.assigned_threads = std::min((int)sd.concurrency, std::max(1, (int)remaining_cores[best_node]));
 
@@ -1186,7 +1192,8 @@ class StageExecutor {
 
 	std::atomic<bool> mpi_receiver_should_stop_{false};
 
-	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank) : sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank) {
+	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank) :
+	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank) {
 		metrics.stage_id = sd_.id;
 	}
 
@@ -1297,12 +1304,7 @@ class StageExecutor {
 		logger().debug("Stage {} MPI receiver exiting", sd_.id);
 	}
 
-	void send_to_next(const Payload& res) {
-		for (auto* q : local_next_queues_) {
-			q->push(Message{.payload = res});
-			metrics.items_sent.fetch_add(1, std::memory_order_relaxed);
-		}
-
+	void send_to_next(Payload res) {
 		if (!remote_next_ranks_.empty()) {
 			auto buf = serialize_payload(res);
 			for (int dest : remote_next_ranks_) {
@@ -1313,6 +1315,15 @@ class StageExecutor {
 				        static_cast<uint64_t>(buf.size()),
 				        std::memory_order_relaxed);
 			}
+		}
+
+		for (size_t i = 0; i < local_next_queues_.size(); ++i) {
+			if (i + 1 < local_next_queues_.size()) {
+				local_next_queues_[i]->push(Message{.payload = res});
+			} else {
+				local_next_queues_[i]->push(Message{.payload = std::move(res)});
+			}
+			metrics.items_sent.fetch_add(1, std::memory_order_relaxed);
 		}
 	}
 
@@ -1358,7 +1369,7 @@ class StageExecutor {
 			if (!item.has_value())
 				break;
 			metrics.items_processed.fetch_add(1, std::memory_order_relaxed);
-			send_to_next(*item);
+			send_to_next(std::move(*item));
 			++count;
 		}
 		send_eos_to_next();
@@ -1377,7 +1388,7 @@ class StageExecutor {
 				item = stage_->execute(msg.payload);
 			}
 			metrics.items_processed.fetch_add(1, std::memory_order_relaxed);
-			send_to_next(item);
+			send_to_next(std::move(item));
 		}
 		send_eos_to_next();
 		logger().debug("Stage {} FILTER done", sd_.id);
@@ -1431,7 +1442,7 @@ class StageExecutor {
 					Payload res;
 					{
 						ScopedTimer timer(metrics.processing_time_us);
-						res = stage_->execute(msg.payload);
+						res = stage_->execute(std::move(msg.payload));
 					}
 					metrics.items_processed.fetch_add(1, std::memory_order_relaxed);
 					results.push(Message{.payload = std::move(res)});
@@ -1458,7 +1469,7 @@ class StageExecutor {
 			while (results.pop(msg)) {
 				if (msg.eos)
 					break;
-				send_to_next(msg.payload);
+				send_to_next(std::move(msg.payload));
 			}
 			send_eos_to_next();
 		});
