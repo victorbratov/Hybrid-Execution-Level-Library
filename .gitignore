@@ -8,7 +8,7 @@ include/
 doctest_*.log
 logs/
 metrics/
-docs/
+docs/doxygen/
 
 # OS-specific
 .DS_Store

@@ -24,6 +24,10 @@
 constexpr int MONITOR_TAG      = 9999;
 constexpr int MONITOR_DONE_TAG = 9998;
 
+/**
+ * @class NodeReporter
+ * @brief Periodically collects and reports node-local metrics to the monitor.
+ */
 class NodeReporter {
 	int                        rank_;
 	std::vector<StageMetrics*> tracked_stages_;
@@ -140,6 +144,10 @@ class NodeReporter {
 
 constexpr int TELEMETRY_DEFAULT_PORT = 9100;
 
+/**
+ * @class MonitorCollector
+ * @brief Aggregates telemetry data from all nodes and serves it via UDP.
+ */
 class MonitorCollector {
 	int                   world_size_;
 	std::atomic<bool>     running_{false};

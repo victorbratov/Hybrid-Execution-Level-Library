@@ -11,14 +11,34 @@
 #include "./plan_pretty_print.hpp"
 #include <thread>
 
+/**
+ * @class Engine
+ * @brief Main execution engine for the workflow pipeline.
+ *
+ * The Engine class is responsible for taking a constructed Pipeline,
+ * planning its execution across the available MPI cluster, and executing
+ * the assigned stages on the local node.
+ */
 class Engine {
 	Pipeline pipeline_;
 
       public:
+	/**
+	 * @brief Sets the workflow pipeline to be executed.
+	 * @param pipeline The pipeline to execute.
+	 */
 	void set_workflow(Pipeline pipeline) {
 		pipeline_ = std::move(pipeline);
 	}
 
+	/**
+	 * @brief Executes the pipeline on the MPI cluster.
+	 *
+	 * Initializes the logger, validates MPI thread support, gathers cluster
+	 * configuration, generates and broadcasts the execution plan, and spawns
+	 * threads for the stages assigned to the local node. Also handles telemetry
+	 * reporting and monitoring.
+	 */
 	void execute() {
 		int rank, world_size;
 		MPI_Comm_rank(MPI_COMM_WORLD, &rank);

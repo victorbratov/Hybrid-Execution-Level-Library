@@ -4,6 +4,9 @@
 #include "./stage_descriptor.hpp"
 #include <format>
 
+/**
+ * @brief Returns the string representation of a StageType.
+ */
 inline std::string stage_type_name(StageType type) {
 	switch (type) {
 		case StageType::SOURCE:
@@ -18,6 +21,9 @@ inline std::string stage_type_name(StageType type) {
 	return "UNKNOWN";
 }
 
+/**
+ * @brief Generates a formatted string representing the cluster configuration.
+ */
 inline std::string cluster_config_view(int world_size, const std::vector<int>& cores_per_node) {
 	std::string out;
 	out += std::format("Cluster: {} nodes\n", world_size);
@@ -31,6 +37,9 @@ inline std::string cluster_config_view(int world_size, const std::vector<int>& c
 	return out;
 }
 
+/**
+ * @brief Generates a formatted string representing the execution plan.
+ */
 inline std::string plan_view(const WorkflowPlan& plan) {
 	std::string out;
 	out += std::format("Workflow: {} stages\n", plan.num_stages);
@@ -64,6 +73,9 @@ inline std::string plan_view(const WorkflowPlan& plan) {
 	return out;
 }
 
+/**
+ * @brief Generates a formatted string representing NodeMetrics.
+ */
 inline std::string node_metrics_view(const NodeMetrics& nm) {
 	std::string out;
 	out += std::format("Node {} — CPU: {:.1f}% — RSS: {:.1f} MB — HW threads: {}\n",

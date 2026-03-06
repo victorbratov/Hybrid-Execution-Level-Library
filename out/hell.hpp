@@ -1,3 +1,10 @@
+/**
+ * @file main.hpp
+ * @brief Main entry point header for the Hell library.
+ *
+ * Includes all necessary components for building and running
+ * a workflow pipeline on an MPI cluster.
+ */
 #pragma once
 #if !__has_include(<mpi.h>)
 #error "Hell requires MPI to be available"
@@ -6,6 +13,10 @@
 #include <cstdint>
 #include <vector>
 
+/**
+ * @enum StageType
+ * @brief Identifies the functional role of a pipeline stage.
+ */
 enum class StageType : uint8_t {
 	SOURCE,
 	SINK,
@@ -13,6 +24,10 @@ enum class StageType : uint8_t {
 	FARM
 };
 
+/**
+ * @struct StageDescriptor
+ * @brief Metadata describing how a stage fits into the mapped execution plan.
+ */
 struct StageDescriptor {
 	uint32_t  id;
 	StageType type;
@@ -30,6 +45,10 @@ struct StageDescriptor {
 	uint32_t output_tag;
 };
 
+/**
+ * @struct WorkflowPlan
+ * @brief The complete mapped execution plan for all stages.
+ */
 struct WorkflowPlan {
 	std::vector<StageDescriptor> stages;
 	uint32_t                     num_stages;
@@ -55,6 +74,9 @@ struct WorkflowPlan {
 #include <unordered_map>
 #include <vector>
 
+/**
+ * @brief Computes a compile-time hash for type identification.
+ */
 inline constexpr uint64_t fnv1a(const char* string) {
 	uint64_t hash = 14695981039346656037ULL;
 	while (*string) {
@@ -64,6 +86,9 @@ inline constexpr uint64_t fnv1a(const char* string) {
 	return hash;
 }
 
+/**
+ * @brief Gets a unique ID for a type.
+ */
 template <typename T>
 inline constexpr uint64_t type_id() {
 #if defined(__clang__) || defined(__GNUC__)
@@ -73,6 +98,10 @@ inline constexpr uint64_t type_id() {
 #endif
 }
 
+/**
+ * @concept Serializable
+ * @brief Concept defining types that implement custom serialization.
+ */
 template <typename T>
 concept Serializable = requires(
                                T                     t,
@@ -83,12 +112,24 @@ concept Serializable = requires(
 	{ T::deserialize(data, size) } -> std::convertible_to<T>;
 } && std::copy_constructible<T>;
 
+/**
+ * @concept TriviallySerializable
+ * @brief Concept defining types that can be bitwise copied.
+ */
 template <typename T>
 concept TriviallySerializable = std::is_trivially_copyable_v<T> && !Serializable<T>;
 
+/**
+ * @concept PayloadCompatible
+ * @brief Concept defining all types supported by the Payload system.
+ */
 template <typename T>
 concept PayloadCompatible = Serializable<T> || TriviallySerializable<T>;
 
+/**
+ * @struct IHolder
+ * @brief Interface for type-erased payload storage.
+ */
 struct IHolder {
 	virtual ~IHolder()                                                = default;
 	virtual uint64_t                 id() const                       = 0;
@@ -98,12 +139,17 @@ struct IHolder {
 	virtual const void*              ptr() const                      = 0;
 };
 
+/**
+ * @class Holder
+ * @brief Concrete type-erased storage for a specific payload type.
+ */
 template <PayloadCompatible T>
 class Holder final : public IHolder {
 	T value;
 
       public:
-	explicit Holder(T value) : value(std::move(value)) {
+	explicit Holder(T value) :
+	        value(std::move(value)) {
 	}
 
 	uint64_t id() const override {
@@ -131,6 +177,10 @@ class Holder final : public IHolder {
 	}
 };
 
+/**
+ * @class PayloadRegistry
+ * @brief Global registry for deserializing payload types.
+ */
 class PayloadRegistry {
       private:
 	static auto& map() {
@@ -176,6 +226,10 @@ class PayloadRegistry {
 	}
 };
 
+/**
+ * @class Payload
+ * @brief Type-erased container for passing arbitrary data between pipeline stages.
+ */
 class Payload {
 	std::unique_ptr<IHolder> holder_;
 
@@ -183,11 +237,13 @@ class Payload {
 	Payload() = default;
 
 	template <PayloadCompatible T>
-	Payload(T value) : holder_(std::make_unique<Holder<T>>(std::move(value))) {
+	Payload(T value) :
+	        holder_(std::make_unique<Holder<T>>(std::move(value))) {
 		PayloadRegistry::register_type<T>();
 	}
 
-	Payload(const Payload& other) : holder_(other.holder_ ? other.holder_->clone() : nullptr) {
+	Payload(const Payload& other) :
+	        holder_(other.holder_ ? other.holder_->clone() : nullptr) {
 	}
 	Payload operator=(const Payload& other) {
 		holder_ = other.holder_ ? other.holder_->clone() : nullptr;
@@ -271,11 +327,27 @@ class Payload {
 #include <utility>
 #include <cassert>
 
+/**
+ * @struct stop_iteration
+ * @brief Exception thrown to signal the end of generator iteration.
+ */
 struct stop_iteration {};
 
+/**
+ * @class generator
+ * @brief A coroutine-based generator yielding values of type T.
+ *
+ * This generator uses C++20 coroutines to lazily evaluate and yield values.
+ *
+ * @tparam T The type of the value yielded by the generator.
+ */
 template <typename T>
 class generator {
       public:
+	/**
+	 * @struct promise_type
+	 * @brief The coroutine promise type for the generator.
+	 */
 	struct promise_type {
 		std::optional<T>   current_value = std::nullopt;
 		std::exception_ptr exception_    = nullptr;
@@ -312,7 +384,8 @@ class generator {
 	generator() noexcept = default;
 
 	explicit generator(std::coroutine_handle<promise_type> handle) noexcept
-	        : handle_(handle) {
+	        :
+	        handle_(handle) {
 	}
 
 	~generator() {
@@ -324,7 +397,8 @@ class generator {
 	generator& operator=(const generator&) = delete;
 
 	generator(generator&& other) noexcept
-	        : handle_(std::exchange(other.handle_, nullptr)) {
+	        :
+	        handle_(std::exchange(other.handle_, nullptr)) {
 	}
 
 	generator& operator=(generator&& other) noexcept {
@@ -336,29 +410,45 @@ class generator {
 		return *this;
 	}
 
-		std::optional<T> next() {
-			if (!handle_ || handle_.done())
-				return std::nullopt;
+	/**
+	 * @brief Resumes the coroutine to get the next value.
+	 * @return An optional containing the next value, or std::nullopt if the generator is done.
+	 */
+	std::optional<T> next() {
+		if (!handle_ || handle_.done())
+			return std::nullopt;
 
 		handle_.resume();
 
-			if (handle_.done()) {
-				if (handle_.promise().exception_)
-					std::rethrow_exception(handle_.promise().exception_);
-				return std::nullopt;
-			}
-
-			return handle_.promise().current_value;
+		if (handle_.done()) {
+			if (handle_.promise().exception_)
+				std::rethrow_exception(handle_.promise().exception_);
+			return std::nullopt;
 		}
 
+		return handle_.promise().current_value;
+	}
+
+	/**
+	 * @brief Checks if the generator has more values to yield.
+	 * @return True if another value can be obtained, false otherwise.
+	 */
 	bool has_next() const noexcept {
 		return handle_ && !handle_.done();
 	}
 
+	/**
+	 * @brief Checks if the generator has finished execution.
+	 * @return True if the generator is done, false otherwise.
+	 */
 	bool done() const noexcept {
 		return !handle_ || handle_.done();
 	}
 
+	/**
+	 * @class iterator
+	 * @brief An input iterator for the generator.
+	 */
 	class iterator {
 	      public:
 		using iterator_category = std::input_iterator_tag;
@@ -368,7 +458,8 @@ class generator {
 		using pointer           = T*;
 
 		iterator() noexcept = default;
-		explicit iterator(std::coroutine_handle<promise_type> h) noexcept : handle_(h) {
+		explicit iterator(std::coroutine_handle<promise_type> h) noexcept :
+		        handle_(h) {
 		}
 
 		iterator& operator++() {
@@ -400,6 +491,10 @@ class generator {
 		std::coroutine_handle<promise_type> handle_ = nullptr;
 	};
 
+	/**
+	 * @brief Gets an iterator to the beginning of the generated sequence.
+	 * @return An iterator pointing to the first generated element.
+	 */
 	iterator begin() {
 		if (handle_) {
 			handle_.resume();
@@ -409,6 +504,10 @@ class generator {
 		return iterator{handle_};
 	}
 
+	/**
+	 * @brief Gets a sentinel representing the end of the generated sequence.
+	 * @return An empty iterator representing the end.
+	 */
 	iterator end() noexcept {
 		return {};
 	}
@@ -417,6 +516,10 @@ class generator {
 	std::coroutine_handle<promise_type> handle_ = nullptr;
 };
 
+/**
+ * @class StageBase
+ * @brief Abstract base class for all pipeline stages.
+ */
 class StageBase {
       public:
 	uint32_t  id = 0;
@@ -434,12 +537,18 @@ class StageBase {
 	virtual void consume(const Payload&) {};
 };
 
+/**
+ * @class SourceStage
+ * @brief A pipeline stage that acts as a data generator (no inputs, only outputs).
+ * @tparam Output The payload type generated by this stage.
+ */
 template <PayloadCompatible Output>
 class SourceStage : public StageBase {
 	generator<Output> generator_;
 
       public:
-	explicit SourceStage(generator<Output> generator) : generator_(std::move(generator)) {
+	explicit SourceStage(generator<Output> generator) :
+	        generator_(std::move(generator)) {
 		type_ = StageType::SOURCE;
 		PayloadRegistry::register_type<Output>();
 	};
@@ -457,12 +566,18 @@ class SourceStage : public StageBase {
 	}
 };
 
+/**
+ * @class SinkStage
+ * @brief A pipeline stage that acts as a data consumer (inputs, no outputs).
+ * @tparam Input The payload type consumed by this stage.
+ */
 template <PayloadCompatible Input>
 class SinkStage : public StageBase {
 	std::function<void(const Input&)> consumer_fn_;
 
       public:
-	explicit SinkStage(std::function<void(const Input&)> consumer_fn) : consumer_fn_(consumer_fn) {
+	explicit SinkStage(std::function<void(const Input&)> consumer_fn) :
+	        consumer_fn_(consumer_fn) {
 		type_ = StageType::SINK;
 		PayloadRegistry::register_type<Input>();
 	};
@@ -476,12 +591,19 @@ class SinkStage : public StageBase {
 	};
 };
 
+/**
+ * @class FilterStage
+ * @brief A standard 1-to-1 processing stage.
+ * @tparam Input The payload type consumed by this stage.
+ * @tparam Output The payload type produced by this stage.
+ */
 template <PayloadCompatible Input, PayloadCompatible Output>
 class FilterStage : public StageBase {
 	std::function<Output(const Input&)> processor_fn_;
 
       public:
-	explicit FilterStage(std::function<Output(const Input&)> processor_fn) : processor_fn_(processor_fn) {
+	explicit FilterStage(std::function<Output(const Input&)> processor_fn) :
+	        processor_fn_(processor_fn) {
 		type_ = StageType::FILTER;
 		PayloadRegistry::register_all<Input, Output>();
 	};
@@ -491,12 +613,19 @@ class FilterStage : public StageBase {
 	};
 };
 
+/**
+ * @class FarmStage
+ * @brief A concurrent processing stage that instances multiple workers.
+ * @tparam Input The payload type consumed by this stage.
+ * @tparam Output The payload type produced by this stage.
+ */
 template <PayloadCompatible Input, PayloadCompatible Output>
 class FarmStage : public StageBase {
 	std::function<Output(const Input&)> processor_fn_;
 
       public:
-	explicit FarmStage(std::function<Output(const Input&)> processor_fn) : processor_fn_(processor_fn) {
+	explicit FarmStage(std::function<Output(const Input&)> processor_fn) :
+	        processor_fn_(processor_fn) {
 		type_ = StageType::FARM;
 		PayloadRegistry::register_all<Input, Output>();
 	};
@@ -511,12 +640,27 @@ class FarmStage : public StageBase {
 	};
 };
 
+/**
+ * @file serialization.hpp
+ * @brief Convenience functions for payload serialization and deserialization.
+ */
+
 #include <vector>
 
+/**
+ * @brief Helper to deserialize a Payload from a byte buffer.
+ * @param buf The byte buffer to deserialize.
+ * @return The deserialized Payload.
+ */
 inline Payload deserialize_payload(const std::vector<uint8_t>& buf) {
 	return Payload::deserialize(buf);
 }
 
+/**
+ * @brief Helper to serialize a Payload into a byte buffer.
+ * @param payload The payload to serialize.
+ * @return The serialized payload as a byte buffer.
+ */
 inline std::vector<uint8_t> serialize_payload(const Payload& payload) {
 	return payload.serialize();
 }
@@ -524,6 +668,10 @@ inline std::vector<uint8_t> serialize_payload(const Payload& payload) {
 #include <memory>
 #include <vector>
 
+/**
+ * @class Pipeline
+ * @brief Represents a sequence of connected processing stages.
+ */
 class Pipeline {
       public:
 	std::vector<std::shared_ptr<StageBase>> stages_;
@@ -558,6 +706,10 @@ Pipeline operator|(Pipeline&& lhs, R&& rhs) {
 
 #include <mpi.h>
 
+/**
+ * @class Planner
+ * @brief Responsible for creating an execution plan for a pipeline across a cluster.
+ */
 class Planner {
       public:
 	static WorkflowPlan plan(const Pipeline& pipeline, uint16_t world_size, const std::vector<int> cores_per_node) {
@@ -626,6 +778,10 @@ class Planner {
 	}
 };
 
+/**
+ * @class PlanSerializer
+ * @brief Handles serialization, deserialization, and broadcasting of the WorkflowPlan.
+ */
 class PlanSerializer {
       public:
 	static std::vector<uint8_t> serialize(const WorkflowPlan& wp) {
@@ -738,6 +894,10 @@ class PlanSerializer {
 #include <mach/mach.h>
 #endif
 
+/**
+ * @struct StageMetrics
+ * @brief Performance and telemetry metrics for a single pipeline stage.
+ */
 struct StageMetrics {
 	uint32_t              stage_id = 0;
 	std::atomic<uint64_t> items_processed{0};
@@ -752,6 +912,10 @@ struct StageMetrics {
 	std::atomic<uint32_t> active_workers{0};
 	std::atomic<uint32_t> queue_depth{0};
 
+	/**
+	 * @struct Snapshot
+	 * @brief A point-in-time snapshot of StageMetrics for reporting.
+	 */
 	struct Snapshot {
 		uint32_t stage_id;
 		uint64_t items_processed;
@@ -767,6 +931,10 @@ struct StageMetrics {
 		uint32_t queue_depth;
 	};
 
+	/**
+	 * @brief Creates a snapshot of the current metrics.
+	 * @return A Snapshot instance with current values.
+	 */
 	Snapshot snapshot() const {
 		return {
 		        stage_id,
@@ -785,6 +953,10 @@ struct StageMetrics {
 	}
 };
 
+/**
+ * @struct NodeMetrics
+ * @brief Aggregated telemetry metrics for an entire physical or logical node.
+ */
 struct NodeMetrics {
 	int      rank       = 0;
 	uint32_t hw_threads = 0;
@@ -795,6 +967,11 @@ struct NodeMetrics {
 	std::vector<double>                 core_loads;
 };
 
+/**
+ * @class ScopedTimer
+ * @brief RAII utility for measuring execution time and automatically adding it to an atomic counter.
+ * @tparam Precision The steady_clock duration type (e.g., std::chrono::microseconds).
+ */
 template <typename Precision = std::chrono::microseconds>
 class ScopedTimer {
 	std::atomic<uint64_t>&                target_;
@@ -815,6 +992,10 @@ class ScopedTimer {
 	ScopedTimer& operator=(const ScopedTimer&) = delete;
 };
 
+/**
+ * @brief Calculates the current overall CPU load of the system.
+ * @return CPU load as a fraction between 0.0 and 1.0.
+ */
 inline double get_cpu_load() {
 	static std::atomic<uint64_t> prev_total{0}, prev_idle{0};
 	uint64_t                     total = 0, idle_all = 0;
@@ -855,6 +1036,10 @@ inline double get_cpu_load() {
 	return (dt > 0) ? (1.0 - static_cast<double>(di) / dt) : 0.0;
 }
 
+/**
+ * @brief Calculates the CPU load for each individual core.
+ * @return A vector of CPU loads (0.0 to 1.0) for each core.
+ */
 inline std::vector<double> get_core_loads() {
 #ifdef __APPLE__
 	static std::vector<uint32_t> prev_ticks;
@@ -940,6 +1125,10 @@ inline std::vector<double> get_core_loads() {
 #endif
 }
 
+/**
+ * @brief Retrieves the Resident Set Size (RSS) indicating physical memory usage.
+ * @return RSS in bytes.
+ */
 inline uint64_t rss_bytes() {
 #ifdef __APPLE__
 	// macOS Implementation
@@ -977,6 +1166,10 @@ inline uint64_t rss_bytes() {
 #include <string_view>
 #include <unistd.h>
 
+/**
+ * @enum LogLevel
+ * @brief Represents the severity level of a log message.
+ */
 enum class LogLevel : uint8_t {
 	DEBUG,
 	INFO,
@@ -985,6 +1178,11 @@ enum class LogLevel : uint8_t {
 	FATAL,
 };
 
+/**
+ * @brief Converts a LogLevel to its corresponding string representation.
+ * @param level The LogLevel.
+ * @return A string view of the log level name.
+ */
 constexpr std::string_view log_level_to_string(LogLevel level) {
 	switch (level) {
 		case LogLevel::DEBUG:
@@ -1001,13 +1199,28 @@ constexpr std::string_view log_level_to_string(LogLevel level) {
 	return "UNKNOWN";
 }
 
+/**
+ * @class Logger
+ * @brief Thread-safe, node-aware logging utility.
+ *
+ * Supports writing logs to both the console and a specific file per node.
+ */
 class Logger {
       public:
+	/**
+	 * @brief Gets the singleton Logger instance.
+	 * @return Reference to the Logger singleton.
+	 */
 	static Logger& instance() {
 		static Logger instance;
 		return instance;
 	}
 
+	/**
+	 * @brief Initializes the Logger for this specific node.
+	 * @param rank The MPI rank of the node.
+	 * @param logs_dir_path The directory to store log files.
+	 */
 	void init(int rank, const std::filesystem::path& logs_dir_path = "logs") {
 		{
 			std::lock_guard lock(mtx_);
@@ -1024,14 +1237,29 @@ class Logger {
 		log_internal(LogLevel::INFO, std::format("logger initialized on node {} with PID - {}", rank_, ::getpid()));
 	}
 
+	/**
+	 * @brief Sets the minimum severity level to be logged.
+	 * @param level The minimum LogLevel.
+	 */
 	void set_log_level(LogLevel level) {
 		log_level_ = level;
 	}
 
+	/**
+	 * @brief Toggles whether to duplicate logs to standard output.
+	 * @param value True to duplicate to stdout, false otherwise.
+	 */
 	void set_log_to_console(bool value) {
 		log_to_console_ = value;
 	}
 
+	/**
+	 * @brief Logs a formatted message with a specific severity.
+	 * @tparam Args The types of the formatting arguments.
+	 * @param level The severity level.
+	 * @param fmt_string The format string.
+	 * @param args The format arguments.
+	 */
 	template <typename... Args>
 	void log(LogLevel level, const std::format_string<Args...> fmt_string, Args&&... args) {
 		if (level < log_level_)
@@ -1040,6 +1268,9 @@ class Logger {
 		log_internal(level, message);
 	}
 
+	/**
+	 * @brief Logs a DEBUG level message.
+	 */
 	template <typename... Args>
 	void debug(const std::format_string<Args...> fmt_string, Args&&... args) {
 		log(LogLevel::DEBUG, fmt_string, std::forward<Args>(args)...);
@@ -1060,11 +1291,19 @@ class Logger {
 		log(LogLevel::ERROR, fmt_string, std::forward<Args>(args)...);
 	}
 
+	/**
+	 * @brief Logs a FATAL level message.
+	 */
 	template <typename... Args>
 	void fatal(const std::format_string<Args...> fmt_string, Args&&... args) {
 		log(LogLevel::FATAL, fmt_string, std::forward<Args>(args)...);
 	}
 
+	/**
+	 * @brief Writes a distinct textual block into the log file.
+	 * @param header The title string of the block.
+	 * @param body The contents of the block.
+	 */
 	void write_block(std::string_view header, std::string_view body) {
 		std::lock_guard lock(mtx_);
 		auto            ts    = timestamp();
@@ -1111,6 +1350,10 @@ class Logger {
 	bool          log_to_console_ = true;
 };
 
+/**
+ * @brief Global convenience method for accessing the logger instance.
+ * @return Reference to the Logger singleton.
+ */
 inline Logger& logger() {
 	return Logger::instance();
 }
@@ -1124,6 +1367,11 @@ inline Logger& logger() {
 #include <optional>
 #include <unordered_map>
 
+/**
+ * @class ConcurrentQueue
+ * @brief A thread-safe queue for inter-thread communication.
+ * @tparam T The type of elements.
+ */
 template <typename T>
 class ConcurrentQueue {
 	std::queue<T>           queue_;
@@ -1168,11 +1416,21 @@ class ConcurrentQueue {
 	}
 };
 
+/**
+ * @struct Message
+ * @brief A wrapper for payload items or end-of-stream markers.
+ */
 struct Message {
 	Payload payload;
 	bool    eos = false;
 };
 
+/**
+ * @class StageExecutor
+ * @brief Executes a specific pipeline stage on a specific node.
+ *
+ * Handles data routing, threading, and local execution of the stage logic.
+ */
 class StageExecutor {
       public:
 	StageDescriptor            sd_;
@@ -1532,6 +1790,9 @@ class StageExecutor {
 
 #include <format>
 
+/**
+ * @brief Returns the string representation of a StageType.
+ */
 inline std::string stage_type_name(StageType type) {
 	switch (type) {
 		case StageType::SOURCE:
@@ -1546,6 +1807,9 @@ inline std::string stage_type_name(StageType type) {
 	return "UNKNOWN";
 }
 
+/**
+ * @brief Generates a formatted string representing the cluster configuration.
+ */
 inline std::string cluster_config_view(int world_size, const std::vector<int>& cores_per_node) {
 	std::string out;
 	out += std::format("Cluster: {} nodes\n", world_size);
@@ -1559,6 +1823,9 @@ inline std::string cluster_config_view(int world_size, const std::vector<int>& c
 	return out;
 }
 
+/**
+ * @brief Generates a formatted string representing the execution plan.
+ */
 inline std::string plan_view(const WorkflowPlan& plan) {
 	std::string out;
 	out += std::format("Workflow: {} stages\n", plan.num_stages);
@@ -1592,6 +1859,9 @@ inline std::string plan_view(const WorkflowPlan& plan) {
 	return out;
 }
 
+/**
+ * @brief Generates a formatted string representing NodeMetrics.
+ */
 inline std::string node_metrics_view(const NodeMetrics& nm) {
 	std::string out;
 	out += std::format("Node {} — CPU: {:.1f}% — RSS: {:.1f} MB — HW threads: {}\n",
@@ -1644,6 +1914,10 @@ inline std::string node_metrics_view(const NodeMetrics& nm) {
 constexpr int MONITOR_TAG      = 9999;
 constexpr int MONITOR_DONE_TAG = 9998;
 
+/**
+ * @class NodeReporter
+ * @brief Periodically collects and reports node-local metrics to the monitor.
+ */
 class NodeReporter {
 	int                        rank_;
 	std::vector<StageMetrics*> tracked_stages_;
@@ -1760,6 +2034,10 @@ class NodeReporter {
 
 constexpr int TELEMETRY_DEFAULT_PORT = 9100;
 
+/**
+ * @class MonitorCollector
+ * @brief Aggregates telemetry data from all nodes and serves it via UDP.
+ */
 class MonitorCollector {
 	int                   world_size_;
 	std::atomic<bool>     running_{false};
@@ -2015,14 +2293,34 @@ class MonitorCollector {
 
 #include <thread>
 
+/**
+ * @class Engine
+ * @brief Main execution engine for the workflow pipeline.
+ *
+ * The Engine class is responsible for taking a constructed Pipeline,
+ * planning its execution across the available MPI cluster, and executing
+ * the assigned stages on the local node.
+ */
 class Engine {
 	Pipeline pipeline_;
 
       public:
+	/**
+	 * @brief Sets the workflow pipeline to be executed.
+	 * @param pipeline The pipeline to execute.
+	 */
 	void set_workflow(Pipeline pipeline) {
 		pipeline_ = std::move(pipeline);
 	}
 
+	/**
+	 * @brief Executes the pipeline on the MPI cluster.
+	 *
+	 * Initializes the logger, validates MPI thread support, gathers cluster
+	 * configuration, generates and broadcasts the execution plan, and spawns
+	 * threads for the stages assigned to the local node. Also handles telemetry
+	 * reporting and monitoring.
+	 */
 	void execute() {
 		int rank, world_size;
 		MPI_Comm_rank(MPI_COMM_WORLD, &rank);

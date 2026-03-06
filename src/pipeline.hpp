@@ -3,6 +3,10 @@
 #include <vector>
 #include "./stages.hpp"
 
+/**
+ * @class Pipeline
+ * @brief Represents a sequence of connected processing stages.
+ */
 class Pipeline {
       public:
 	std::vector<std::shared_ptr<StageBase>> stages_;

@@ -3,6 +3,10 @@
 #include "./stage_descriptor.hpp"
 #include "./pipeline.hpp"
 
+/**
+ * @class Planner
+ * @brief Responsible for creating an execution plan for a pipeline across a cluster.
+ */
 class Planner {
       public:
 	static WorkflowPlan plan(const Pipeline& pipeline, uint16_t world_size, const std::vector<int> cores_per_node) {
@@ -71,6 +75,10 @@ class Planner {
 	}
 };
 
+/**
+ * @class PlanSerializer
+ * @brief Handles serialization, deserialization, and broadcasting of the WorkflowPlan.
+ */
 class PlanSerializer {
       public:
 	static std::vector<uint8_t> serialize(const WorkflowPlan& wp) {

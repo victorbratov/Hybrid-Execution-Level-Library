@@ -11,6 +11,10 @@
 #include <mach/mach.h>
 #endif
 
+/**
+ * @struct StageMetrics
+ * @brief Performance and telemetry metrics for a single pipeline stage.
+ */
 struct StageMetrics {
 	uint32_t              stage_id = 0;
 	std::atomic<uint64_t> items_processed{0};
@@ -25,6 +29,10 @@ struct StageMetrics {
 	std::atomic<uint32_t> active_workers{0};
 	std::atomic<uint32_t> queue_depth{0};
 
+	/**
+	 * @struct Snapshot
+	 * @brief A point-in-time snapshot of StageMetrics for reporting.
+	 */
 	struct Snapshot {
 		uint32_t stage_id;
 		uint64_t items_processed;
@@ -40,6 +48,10 @@ struct StageMetrics {
 		uint32_t queue_depth;
 	};
 
+	/**
+	 * @brief Creates a snapshot of the current metrics.
+	 * @return A Snapshot instance with current values.
+	 */
 	Snapshot snapshot() const {
 		return {
 		        stage_id,
@@ -58,6 +70,10 @@ struct StageMetrics {
 	}
 };
 
+/**
+ * @struct NodeMetrics
+ * @brief Aggregated telemetry metrics for an entire physical or logical node.
+ */
 struct NodeMetrics {
 	int      rank       = 0;
 	uint32_t hw_threads = 0;
@@ -68,6 +84,11 @@ struct NodeMetrics {
 	std::vector<double>                 core_loads;
 };
 
+/**
+ * @class ScopedTimer
+ * @brief RAII utility for measuring execution time and automatically adding it to an atomic counter.
+ * @tparam Precision The steady_clock duration type (e.g., std::chrono::microseconds).
+ */
 template <typename Precision = std::chrono::microseconds>
 class ScopedTimer {
 	std::atomic<uint64_t>&                target_;
@@ -88,6 +109,10 @@ class ScopedTimer {
 	ScopedTimer& operator=(const ScopedTimer&) = delete;
 };
 
+/**
+ * @brief Calculates the current overall CPU load of the system.
+ * @return CPU load as a fraction between 0.0 and 1.0.
+ */
 inline double get_cpu_load() {
 	static std::atomic<uint64_t> prev_total{0}, prev_idle{0};
 	uint64_t                     total = 0, idle_all = 0;
@@ -128,6 +153,10 @@ inline double get_cpu_load() {
 	return (dt > 0) ? (1.0 - static_cast<double>(di) / dt) : 0.0;
 }
 
+/**
+ * @brief Calculates the CPU load for each individual core.
+ * @return A vector of CPU loads (0.0 to 1.0) for each core.
+ */
 inline std::vector<double> get_core_loads() {
 #ifdef __APPLE__
 	static std::vector<uint32_t> prev_ticks;
@@ -213,6 +242,10 @@ inline std::vector<double> get_core_loads() {
 #endif
 }
 
+/**
+ * @brief Retrieves the Resident Set Size (RSS) indicating physical memory usage.
+ * @return RSS in bytes.
+ */
 inline uint64_t rss_bytes() {
 #ifdef __APPLE__
 	// macOS Implementation

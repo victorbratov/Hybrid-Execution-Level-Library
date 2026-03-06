@@ -11,6 +11,9 @@
 #include <unordered_map>
 #include <vector>
 
+/**
+ * @brief Computes a compile-time hash for type identification.
+ */
 inline constexpr uint64_t fnv1a(const char* string) {
 	uint64_t hash = 14695981039346656037ULL;
 	while (*string) {
@@ -20,6 +23,9 @@ inline constexpr uint64_t fnv1a(const char* string) {
 	return hash;
 }
 
+/**
+ * @brief Gets a unique ID for a type.
+ */
 template <typename T>
 inline constexpr uint64_t type_id() {
 #if defined(__clang__) || defined(__GNUC__)
@@ -29,6 +35,10 @@ inline constexpr uint64_t type_id() {
 #endif
 }
 
+/**
+ * @concept Serializable
+ * @brief Concept defining types that implement custom serialization.
+ */
 template <typename T>
 concept Serializable = requires(
                                T                     t,
@@ -39,12 +49,24 @@ concept Serializable = requires(
 	{ T::deserialize(data, size) } -> std::convertible_to<T>;
 } && std::copy_constructible<T>;
 
+/**
+ * @concept TriviallySerializable
+ * @brief Concept defining types that can be bitwise copied.
+ */
 template <typename T>
 concept TriviallySerializable = std::is_trivially_copyable_v<T> && !Serializable<T>;
 
+/**
+ * @concept PayloadCompatible
+ * @brief Concept defining all types supported by the Payload system.
+ */
 template <typename T>
 concept PayloadCompatible = Serializable<T> || TriviallySerializable<T>;
 
+/**
+ * @struct IHolder
+ * @brief Interface for type-erased payload storage.
+ */
 struct IHolder {
 	virtual ~IHolder()                                                = default;
 	virtual uint64_t                 id() const                       = 0;
@@ -54,12 +76,17 @@ struct IHolder {
 	virtual const void*              ptr() const                      = 0;
 };
 
+/**
+ * @class Holder
+ * @brief Concrete type-erased storage for a specific payload type.
+ */
 template <PayloadCompatible T>
 class Holder final : public IHolder {
 	T value;
 
       public:
-	explicit Holder(T value) : value(std::move(value)) {
+	explicit Holder(T value) :
+	        value(std::move(value)) {
 	}
 
 	uint64_t id() const override {
@@ -87,6 +114,10 @@ class Holder final : public IHolder {
 	}
 };
 
+/**
+ * @class PayloadRegistry
+ * @brief Global registry for deserializing payload types.
+ */
 class PayloadRegistry {
       private:
 	static auto& map() {
@@ -132,6 +163,10 @@ class PayloadRegistry {
 	}
 };
 
+/**
+ * @class Payload
+ * @brief Type-erased container for passing arbitrary data between pipeline stages.
+ */
 class Payload {
 	std::unique_ptr<IHolder> holder_;
 
@@ -139,11 +174,13 @@ class Payload {
 	Payload() = default;
 
 	template <PayloadCompatible T>
-	Payload(T value) : holder_(std::make_unique<Holder<T>>(std::move(value))) {
+	Payload(T value) :
+	        holder_(std::make_unique<Holder<T>>(std::move(value))) {
 		PayloadRegistry::register_type<T>();
 	}
 
-	Payload(const Payload& other) : holder_(other.holder_ ? other.holder_->clone() : nullptr) {
+	Payload(const Payload& other) :
+	        holder_(other.holder_ ? other.holder_->clone() : nullptr) {
 	}
 	Payload operator=(const Payload& other) {
 		holder_ = other.holder_ ? other.holder_->clone() : nullptr;

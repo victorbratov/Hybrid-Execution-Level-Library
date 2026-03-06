@@ -12,10 +12,10 @@ GENERATE_LATEX         = NO
 # Input
 #---------------------------------------------------------------------------
 
-INPUT                  = src
+INPUT                  = src docs
 RECURSIVE              = YES
-FILE_PATTERNS          = *.c *.cpp *.h *.hpp *.go
-USE_MDFILE_AS_MAINPAGE = README.md
+FILE_PATTERNS          = *.c *.cpp *.h *.hpp *.go *.md
+USE_MDFILE_AS_MAINPAGE = docs/mainpage.md
 
 #---------------------------------------------------------------------------
 # Markdown / formatting (IMPORTANT)

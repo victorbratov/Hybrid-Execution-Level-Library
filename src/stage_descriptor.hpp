@@ -2,6 +2,10 @@
 #include <cstdint>
 #include <vector>
 
+/**
+ * @enum StageType
+ * @brief Identifies the functional role of a pipeline stage.
+ */
 enum class StageType : uint8_t {
 	SOURCE,
 	SINK,
@@ -9,6 +13,10 @@ enum class StageType : uint8_t {
 	FARM
 };
 
+/**
+ * @struct StageDescriptor
+ * @brief Metadata describing how a stage fits into the mapped execution plan.
+ */
 struct StageDescriptor {
 	uint32_t  id;
 	StageType type;
@@ -26,6 +34,10 @@ struct StageDescriptor {
 	uint32_t output_tag;
 };
 
+/**
+ * @struct WorkflowPlan
+ * @brief The complete mapped execution plan for all stages.
+ */
 struct WorkflowPlan {
 	std::vector<StageDescriptor> stages;
 	uint32_t                     num_stages;

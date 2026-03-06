@@ -15,6 +15,11 @@
 #include <optional>
 #include <unordered_map>
 
+/**
+ * @class ConcurrentQueue
+ * @brief A thread-safe queue for inter-thread communication.
+ * @tparam T The type of elements.
+ */
 template <typename T>
 class ConcurrentQueue {
 	std::queue<T>           queue_;
@@ -59,11 +64,21 @@ class ConcurrentQueue {
 	}
 };
 
+/**
+ * @struct Message
+ * @brief A wrapper for payload items or end-of-stream markers.
+ */
 struct Message {
 	Payload payload;
 	bool    eos = false;
 };
 
+/**
+ * @class StageExecutor
+ * @brief Executes a specific pipeline stage on a specific node.
+ *
+ * Handles data routing, threading, and local execution of the stage logic.
+ */
 class StageExecutor {
       public:
 	StageDescriptor            sd_;

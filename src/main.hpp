@@ -1,3 +1,10 @@
+/**
+ * @file main.hpp
+ * @brief Main entry point header for the Hell library.
+ *
+ * Includes all necessary components for building and running
+ * a workflow pipeline on an MPI cluster.
+ */
 #pragma once
 #if !__has_include(<mpi.h>)
 #error "Hell requires MPI to be available"

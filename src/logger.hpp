@@ -10,6 +10,10 @@
 #include <string_view>
 #include <unistd.h>
 
+/**
+ * @enum LogLevel
+ * @brief Represents the severity level of a log message.
+ */
 enum class LogLevel : uint8_t {
 	DEBUG,
 	INFO,
@@ -18,6 +22,11 @@ enum class LogLevel : uint8_t {
 	FATAL,
 };
 
+/**
+ * @brief Converts a LogLevel to its corresponding string representation.
+ * @param level The LogLevel.
+ * @return A string view of the log level name.
+ */
 constexpr std::string_view log_level_to_string(LogLevel level) {
 	switch (level) {
 		case LogLevel::DEBUG:
@@ -34,13 +43,28 @@ constexpr std::string_view log_level_to_string(LogLevel level) {
 	return "UNKNOWN";
 }
 
+/**
+ * @class Logger
+ * @brief Thread-safe, node-aware logging utility.
+ *
+ * Supports writing logs to both the console and a specific file per node.
+ */
 class Logger {
       public:
+	/**
+	 * @brief Gets the singleton Logger instance.
+	 * @return Reference to the Logger singleton.
+	 */
 	static Logger& instance() {
 		static Logger instance;
 		return instance;
 	}
 
+	/**
+	 * @brief Initializes the Logger for this specific node.
+	 * @param rank The MPI rank of the node.
+	 * @param logs_dir_path The directory to store log files.
+	 */
 	void init(int rank, const std::filesystem::path& logs_dir_path = "logs") {
 		{
 			std::lock_guard lock(mtx_);
@@ -57,14 +81,29 @@ class Logger {
 		log_internal(LogLevel::INFO, std::format("logger initialized on node {} with PID - {}", rank_, ::getpid()));
 	}
 
+	/**
+	 * @brief Sets the minimum severity level to be logged.
+	 * @param level The minimum LogLevel.
+	 */
 	void set_log_level(LogLevel level) {
 		log_level_ = level;
 	}
 
+	/**
+	 * @brief Toggles whether to duplicate logs to standard output.
+	 * @param value True to duplicate to stdout, false otherwise.
+	 */
 	void set_log_to_console(bool value) {
 		log_to_console_ = value;
 	}
 
+	/**
+	 * @brief Logs a formatted message with a specific severity.
+	 * @tparam Args The types of the formatting arguments.
+	 * @param level The severity level.
+	 * @param fmt_string The format string.
+	 * @param args The format arguments.
+	 */
 	template <typename... Args>
 	void log(LogLevel level, const std::format_string<Args...> fmt_string, Args&&... args) {
 		if (level < log_level_)
@@ -73,6 +112,9 @@ class Logger {
 		log_internal(level, message);
 	}
 
+	/**
+	 * @brief Logs a DEBUG level message.
+	 */
 	template <typename... Args>
 	void debug(const std::format_string<Args...> fmt_string, Args&&... args) {
 		log(LogLevel::DEBUG, fmt_string, std::forward<Args>(args)...);
@@ -93,11 +135,19 @@ class Logger {
 		log(LogLevel::ERROR, fmt_string, std::forward<Args>(args)...);
 	}
 
+	/**
+	 * @brief Logs a FATAL level message.
+	 */
 	template <typename... Args>
 	void fatal(const std::format_string<Args...> fmt_string, Args&&... args) {
 		log(LogLevel::FATAL, fmt_string, std::forward<Args>(args)...);
 	}
 
+	/**
+	 * @brief Writes a distinct textual block into the log file.
+	 * @param header The title string of the block.
+	 * @param body The contents of the block.
+	 */
 	void write_block(std::string_view header, std::string_view body) {
 		std::lock_guard lock(mtx_);
 		auto            ts    = timestamp();
@@ -144,6 +194,10 @@ class Logger {
 	bool          log_to_console_ = true;
 };
 
+/**
+ * @brief Global convenience method for accessing the logger instance.
+ * @return Reference to the Logger singleton.
+ */
 inline Logger& logger() {
 	return Logger::instance();
 }
