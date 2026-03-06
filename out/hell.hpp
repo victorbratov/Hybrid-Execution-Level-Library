@@ -1619,8 +1619,15 @@ inline std::string node_metrics_view(const NodeMetrics& nm) {
 #include <format>
 #include <fstream>
 #include <mutex>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <vector>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <mpi.h>
 
 constexpr int MONITOR_TAG      = 9999;
@@ -1740,6 +1747,8 @@ class NodeReporter {
 	}
 };
 
+constexpr int TELEMETRY_DEFAULT_PORT = 9100;
+
 class MonitorCollector {
 	int                   world_size_;
 	std::atomic<bool>     running_{false};
@@ -1749,11 +1758,23 @@ class MonitorCollector {
 	std::vector<NodeMetrics> latest_;
 	std::mutex               mtx_;
 
+	int                udp_sock_ = -1;
+	struct sockaddr_in dest_addr_;
+
       public:
 	explicit MonitorCollector(int                   world_size,
-	                          std::filesystem::path output_dir = "metrics") :
+	                          std::filesystem::path output_dir     = "metrics",
+	                          int                   telemetry_port = TELEMETRY_DEFAULT_PORT) :
 	        world_size_(world_size), output_dir_(std::move(output_dir)), latest_(world_size) {
 		std::filesystem::create_directories(output_dir_);
+
+		udp_sock_ = ::socket(AF_INET, SOCK_DGRAM, 0);
+		if (udp_sock_ >= 0) {
+			std::memset(&dest_addr_, 0, sizeof(dest_addr_));
+			dest_addr_.sin_family = AF_INET;
+			dest_addr_.sin_port   = htons(static_cast<uint16_t>(telemetry_port));
+			inet_pton(AF_INET, "127.0.0.1", &dest_addr_.sin_addr);
+		}
 	}
 
 	void start() {
@@ -1793,6 +1814,10 @@ class MonitorCollector {
 			collector_thread_.join();
 		}
 		write_final_summary();
+		if (udp_sock_ >= 0) {
+			::close(udp_sock_);
+			udp_sock_ = -1;
+		}
 	}
 
 	std::vector<NodeMetrics> current_state() {
@@ -1826,7 +1851,7 @@ class MonitorCollector {
 		               nm.rank,
 		               nm.cpu_load * 100.0);
 
-		write_live_json();
+		send_live_json();
 	}
 
 	void drain_remaining_metrics() {
@@ -1851,14 +1876,13 @@ class MonitorCollector {
 		}
 	}
 
-	void write_live_json() {
+	void send_live_json() {
+		if (udp_sock_ < 0)
+			return;
+
 		std::lock_guard lock(mtx_);
 
-		auto file_path = output_dir_ / "monitor.jsonl";
-
-		std::ofstream f(file_path, std::ios::app);
-		if (!f.is_open())
-			return;
+		std::ostringstream f;
 
 		f << "{\"timestamp\":\"" << current_time_str() << "\",\"nodes\":[";
 
@@ -1914,9 +1938,10 @@ class MonitorCollector {
 				f << ",";
 		}
 
-		f << "]}\n";
+		f << "]}";
 
-		f.flush();
+		auto msg = f.str();
+		::sendto(udp_sock_, msg.data(), msg.size(), 0, reinterpret_cast<const struct sockaddr*>(&dest_addr_), sizeof(dest_addr_));
 	}
 
 	void write_final_summary() {
