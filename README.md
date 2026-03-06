@@ -40,7 +40,7 @@ flowchart TD
     UserCode --> |Passes Pipeline to| Engine
     
     %% Engine Layer
-    subgraph Engine Layer (Rank 0)
+    subgraph EngineLayer ["Engine Layer (Rank 0)"]
         Engine[Engine::execute]
         Planner[Planner]
         Engine --> |Requests Plan from| Planner
@@ -48,12 +48,12 @@ flowchart TD
     end
     
     %% Execution Layer
-    subgraph Cluster Execution (Ranks 0...N)
+    subgraph ClusterExecution ["Cluster Execution (Ranks 0...N)"]
         Plan --> |Broadcasts to| Nodes
         Nodes[Node Executors]
         Nodes --> |Instantiates| Executors
         
-        subgraph Stage Executors (Local Threads)
+        subgraph StageExecutors ["Stage Executors (Local Threads)"]
             Executors(StageExecutor)
             Queue[(ConcurrentQueue)]
             Stage[StageBase: Source/Filter/Farm/Sink]
