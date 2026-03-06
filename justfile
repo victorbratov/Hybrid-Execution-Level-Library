@@ -61,11 +61,11 @@ run-example-sobel: example-sobel
 	@echo "=== RUNNING SOBEL EXAMPLE (np=2) ==="just
 	mpirun -np 2 --oversubscribe ./{{EXAMPLE_SOBEL_BIN}} input.pgm output.pgm
 
-example-telemetry: bundle
+build-example-telemetry: bundle
 	@echo "=== BUILDING TELEMETRY STRESS EXAMPLE ==="
 	@mkdir -p {{BUILD_DIR}}
 	{{CXX}} {{CXXFLAGS}} {{EXAMPLE_TELEMETRY_SRC}} -o {{EXAMPLE_TELEMETRY_BIN}}
 
-run-example-telemetry np='4' items='20000' rounds='12000' threads='8' seed='1337' mins='30': example-telemetry
+run-example-telemetry np='4' items='20000' rounds='12000' threads='8' seed='1337' mins='30':
 	@echo "=== RUNNING TELEMETRY STRESS EXAMPLE (np={{np}}) ==="
 	mpirun -np {{np}} --oversubscribe ./{{EXAMPLE_TELEMETRY_BIN}} {{items}} {{rounds}} {{threads}} {{seed}} {{mins}}

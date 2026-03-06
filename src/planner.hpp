@@ -23,14 +23,18 @@ class Planner {
 			sd.concurrency = stage->requested_concurrency;
 
 			uint16_t best_node = 0;
-			for (uint16_t node = 0; node < world_size; ++node) {
-				if (remaining_cores[node] >= (int)stage->requested_concurrency) {
-					best_node = node;
-					break;
-				}
-
-				if (remaining_cores[node] > remaining_cores[best_node]) {
-					best_node = node;
+			if (stage->type_ == StageType::SOURCE || stage->type_ == StageType::SINK) {
+				best_node = 0;
+			} else {
+				if (world_size > 1) {
+					best_node = 1;
+					for (uint16_t node = 1; node < world_size; ++node) {
+						if (remaining_cores[node] > remaining_cores[best_node]) {
+							best_node = node;
+						}
+					}
+				} else {
+					best_node = 0;
 				}
 			}
 

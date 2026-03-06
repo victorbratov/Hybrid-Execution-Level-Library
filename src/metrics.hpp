@@ -65,6 +65,7 @@ struct NodeMetrics {
 	uint64_t rss_bytes  = 0;
 
 	std::vector<StageMetrics::Snapshot> stages;
+	std::vector<double>                 core_loads;
 };
 
 template <typename Precision = std::chrono::microseconds>
@@ -73,7 +74,8 @@ class ScopedTimer {
 	std::chrono::steady_clock::time_point start_;
 
       public:
-	explicit ScopedTimer(std::atomic<uint64_t>& target) : target_(target), start_(std::chrono::steady_clock::now()) {
+	explicit ScopedTimer(std::atomic<uint64_t>& target) :
+	        target_(target), start_(std::chrono::steady_clock::now()) {
 	}
 
 	~ScopedTimer() {
@@ -124,6 +126,91 @@ inline double get_cpu_load() {
 	uint64_t di = idle_all - last_i;
 
 	return (dt > 0) ? (1.0 - static_cast<double>(di) / dt) : 0.0;
+}
+
+inline std::vector<double> get_core_loads() {
+#ifdef __APPLE__
+	static std::vector<uint32_t> prev_ticks;
+	natural_t                    processor_count = 0;
+	processor_info_array_t       cpu_info;
+	mach_msg_type_number_t       count;
+
+	if (host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &processor_count, &cpu_info, &count) != KERN_SUCCESS) {
+		return {};
+	}
+
+	std::vector<double> loads;
+	loads.reserve(processor_count);
+
+	if (prev_ticks.size() != processor_count * CPU_STATE_MAX) {
+		prev_ticks.resize(processor_count * CPU_STATE_MAX, 0);
+	}
+
+	for (unsigned i = 0; i < processor_count; ++i) {
+		processor_cpu_load_info_t core_info = (processor_cpu_load_info_t)&cpu_info[i * CPU_STATE_MAX];
+
+		uint64_t total = core_info->cpu_ticks[CPU_STATE_USER] + core_info->cpu_ticks[CPU_STATE_NICE] + core_info->cpu_ticks[CPU_STATE_SYSTEM] + core_info->cpu_ticks[CPU_STATE_IDLE];
+		uint64_t idle  = core_info->cpu_ticks[CPU_STATE_IDLE];
+
+		uint64_t p_total = prev_ticks[i * CPU_STATE_MAX + CPU_STATE_USER] + prev_ticks[i * CPU_STATE_MAX + CPU_STATE_NICE] + prev_ticks[i * CPU_STATE_MAX + CPU_STATE_SYSTEM] + prev_ticks[i * CPU_STATE_MAX + CPU_STATE_IDLE];
+		uint64_t p_idle  = prev_ticks[i * CPU_STATE_MAX + CPU_STATE_IDLE];
+
+		uint64_t dt = total - p_total;
+		uint64_t di = idle - p_idle;
+
+		loads.push_back((dt > 0) ? (1.0 - static_cast<double>(di) / dt) : 0.0);
+
+		for (int state = 0; state < CPU_STATE_MAX; ++state) {
+			prev_ticks[i * CPU_STATE_MAX + state] = core_info->cpu_ticks[state];
+		}
+	}
+
+	vm_deallocate(mach_task_self(), (vm_address_t)cpu_info, count * sizeof(integer_t));
+	return loads;
+
+#elif defined(__linux__)
+	static std::vector<std::pair<uint64_t, uint64_t>> prev_state; // {total, idle}
+	std::ifstream                                     file("/proc/stat");
+	std::string                                       line;
+	std::vector<double>                               loads;
+
+	int core_idx = 0;
+	while (std::getline(file, line)) {
+		if (line.compare(0, 3, "cpu") == 0 && line.size() > 3 && std::isdigit(line[3])) {
+			std::string label;
+			uint64_t    user, nice, system, idle, iowait, irq, softirq, steal;
+
+			// We can use a simple parser: stringstream is easy, but manual parsing is fine too.
+			size_t space_pos = line.find(' ');
+			if (space_pos != std::string::npos) {
+				std::string        values = line.substr(space_pos);
+				std::istringstream iss(values);
+				if (iss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal) {
+					uint64_t total    = user + nice + system + idle + iowait + irq + softirq + steal;
+					uint64_t idle_all = idle + iowait;
+
+					if (static_cast<size_t>(core_idx) >= prev_state.size()) {
+						prev_state.push_back({0, 0});
+					}
+
+					uint64_t p_total = prev_state[core_idx].first;
+					uint64_t p_idle  = prev_state[core_idx].second;
+
+					uint64_t dt = total - p_total;
+					uint64_t di = idle_all - p_idle;
+
+					loads.push_back((dt > 0) ? (1.0 - static_cast<double>(di) / dt) : 0.0);
+
+					prev_state[core_idx] = {total, idle_all};
+					core_idx++;
+				}
+			}
+		}
+	}
+	return loads;
+#else
+	return {};
+#endif
 }
 
 inline uint64_t rss_bytes() {

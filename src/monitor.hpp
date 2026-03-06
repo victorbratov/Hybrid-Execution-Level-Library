@@ -24,7 +24,8 @@ class NodeReporter {
 	std::jthread               reporter_thread_;
 
       public:
-	explicit NodeReporter(int rank) : rank_(rank) {
+	explicit NodeReporter(int rank) :
+	        rank_(rank) {
 	}
 
 	void track_stage(StageMetrics* stage) {
@@ -58,6 +59,7 @@ class NodeReporter {
 		nm.hw_threads = std::thread::hardware_concurrency();
 		nm.cpu_load   = get_cpu_load();
 		nm.rss_bytes  = rss_bytes();
+		nm.core_loads = get_core_loads();
 		for (auto* stage : tracked_stages_) {
 			nm.stages.push_back(stage->snapshot());
 		}
@@ -87,6 +89,13 @@ class NodeReporter {
 			auto p = reinterpret_cast<const uint8_t*>(&s);
 			buf.insert(buf.end(), p, p + sizeof(s));
 		}
+
+		uint32_t core_loads_size = nm.core_loads.size();
+		push(core_loads_size);
+		for (auto& load : nm.core_loads) {
+			push(load);
+		}
+
 		return buf;
 	}
 
@@ -110,6 +119,14 @@ class NodeReporter {
 			std::memcpy(&s, buf + offset, sizeof(s));
 			offset += sizeof(s);
 		}
+
+		uint32_t core_loads_size;
+		pull(core_loads_size);
+		nm.core_loads.resize(core_loads_size);
+		for (auto& load : nm.core_loads) {
+			pull(load);
+		}
+
 		return nm;
 	}
 };
@@ -125,7 +142,8 @@ class MonitorCollector {
 
       public:
 	explicit MonitorCollector(int                   world_size,
-	                          std::filesystem::path output_dir = "metrics") : world_size_(world_size), output_dir_(std::move(output_dir)), latest_(world_size) {
+	                          std::filesystem::path output_dir = "metrics") :
+	        world_size_(world_size), output_dir_(std::move(output_dir)), latest_(world_size) {
 		std::filesystem::create_directories(output_dir_);
 	}
 
@@ -267,7 +285,21 @@ class MonitorCollector {
 					f << ",";
 			}
 
-			f << "]}";
+			f << "]";
+
+			if (nm.core_loads.size() > 0) {
+				f << ",\"core_loads\":[";
+				for (size_t j = 0; j < nm.core_loads.size(); ++j) {
+					f << nm.core_loads[j];
+					if (j + 1 < nm.core_loads.size())
+						f << ",";
+				}
+				f << "]";
+			} else {
+				f << ",\"core_loads\":[]";
+			}
+
+			f << "}";
 
 			if (i + 1 < world_size_)
 				f << ",";
