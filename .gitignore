@@ -9,6 +9,7 @@ doctest_*.log
 logs/
 metrics/
 docs/doxygen/
+tmp/
 
 # OS-specific
 .DS_Store

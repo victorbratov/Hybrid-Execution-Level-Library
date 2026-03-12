@@ -1366,6 +1366,7 @@ inline Logger& logger() {
 #include <thread>
 #include <optional>
 #include <unordered_map>
+#include <condition_variable>
 
 /**
  * @class ConcurrentQueue
