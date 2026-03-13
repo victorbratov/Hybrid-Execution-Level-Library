@@ -665,6 +665,64 @@ inline std::vector<uint8_t> serialize_payload(const Payload& payload) {
 	return payload.serialize();
 }
 
+/**
+ * @brief Serializes a batch of Payloads into a single byte buffer.
+ *
+ * Wire format: [uint32_t count] [uint32_t len_0][payload_0 bytes] [uint32_t len_1][payload_1 bytes] ...
+ *
+ * @param batch The vector of payloads to serialize.
+ * @return The serialized batch as a byte buffer.
+ */
+inline std::vector<uint8_t> serialize_batch(const std::vector<Payload>& batch) {
+	std::vector<uint8_t> buf;
+
+	auto append = [&](const auto& value) {
+		auto* p = reinterpret_cast<const uint8_t*>(&value);
+		buf.insert(buf.end(), p, p + sizeof(value));
+	};
+
+	uint32_t count = static_cast<uint32_t>(batch.size());
+	append(count);
+
+	for (auto& payload : batch) {
+		auto item_buf = payload.serialize();
+		uint32_t item_len = static_cast<uint32_t>(item_buf.size());
+		append(item_len);
+		buf.insert(buf.end(), item_buf.begin(), item_buf.end());
+	}
+
+	return buf;
+}
+
+/**
+ * @brief Deserializes a batch of Payloads from a byte buffer.
+ * @param buf The byte buffer produced by serialize_batch.
+ * @return A vector of deserialized Payloads.
+ */
+inline std::vector<Payload> deserialize_batch(const std::vector<uint8_t>& buf) {
+	const uint8_t* ptr = buf.data();
+
+	auto read = [&]<typename T>(T& out) {
+		std::memcpy(&out, ptr, sizeof(T));
+		ptr += sizeof(T);
+	};
+
+	uint32_t count;
+	read(count);
+
+	std::vector<Payload> result;
+	result.reserve(count);
+
+	for (uint32_t i = 0; i < count; ++i) {
+		uint32_t item_len;
+		read(item_len);
+		result.push_back(Payload::deserialize(ptr, item_len));
+		ptr += item_len;
+	}
+
+	return result;
+}
+
 #include <memory>
 #include <vector>
 
@@ -1451,9 +1509,15 @@ class StageExecutor {
 
 	std::atomic<bool> mpi_receiver_should_stop_{false};
 
-	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank) :
-	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank) {
+	uint32_t             batch_size_;
+	std::vector<Payload> send_buffer_;
+
+	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank,
+	              uint32_t batch_size = 64) :
+	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank),
+	        batch_size_(batch_size) {
 		metrics.stage_id = sd_.id;
+		send_buffer_.reserve(batch_size_);
 	}
 
 	void resolve_connections(
@@ -1550,29 +1614,47 @@ class StageExecutor {
 				continue;
 			}
 
-			metrics.items_received.fetch_add(1, std::memory_order_relaxed);
 			metrics.bytes_received.fetch_add(
 			        static_cast<uint64_t>(count),
 			        std::memory_order_relaxed);
 
-			Message msg;
-			msg.payload = deserialize_payload(buf);
-			queue_.push(std::move(msg));
+			auto batch = deserialize_batch(buf);
+			metrics.items_received.fetch_add(
+			        static_cast<uint64_t>(batch.size()),
+			        std::memory_order_relaxed);
+
+			for (auto& payload : batch) {
+				queue_.push(Message{.payload = std::move(payload)});
+			}
 		}
 
 		logger().debug("Stage {} MPI receiver exiting", sd_.id);
 	}
 
+	void flush_remote_batch() {
+		if (send_buffer_.empty() || remote_next_ranks_.empty())
+			return;
+
+		auto buf = serialize_batch(send_buffer_);
+		for (int dest : remote_next_ranks_) {
+			ScopedTimer timer(metrics.mpi_send_time_us);
+			MPI_Send(buf.data(), static_cast<int>(buf.size()), MPI_BYTE, dest, sd_.output_tag, MPI_COMM_WORLD);
+			metrics.bytes_sent.fetch_add(
+			        static_cast<uint64_t>(buf.size()),
+			        std::memory_order_relaxed);
+		}
+		metrics.items_sent.fetch_add(
+		        static_cast<uint64_t>(send_buffer_.size()) * remote_next_ranks_.size(),
+		        std::memory_order_relaxed);
+
+		send_buffer_.clear();
+	}
+
 	void send_to_next(Payload res) {
 		if (!remote_next_ranks_.empty()) {
-			auto buf = serialize_payload(res);
-			for (int dest : remote_next_ranks_) {
-				ScopedTimer timer(metrics.mpi_send_time_us);
-				MPI_Send(buf.data(), static_cast<int>(buf.size()), MPI_BYTE, dest, sd_.output_tag, MPI_COMM_WORLD);
-				metrics.items_sent.fetch_add(1, std::memory_order_relaxed);
-				metrics.bytes_sent.fetch_add(
-				        static_cast<uint64_t>(buf.size()),
-				        std::memory_order_relaxed);
+			send_buffer_.push_back(res);
+			if (send_buffer_.size() >= batch_size_) {
+				flush_remote_batch();
 			}
 		}
 
@@ -1587,6 +1669,7 @@ class StageExecutor {
 	}
 
 	void send_eos_to_next() {
+		flush_remote_batch();
 		for (auto* q : local_next_queues_) {
 			q->push(Message{.eos = true});
 			logger().debug("Stage {} sent LOCAL EOS to next", sd_.id);
@@ -2304,6 +2387,7 @@ class MonitorCollector {
  */
 class Engine {
 	Pipeline pipeline_;
+	uint32_t batch_size_ = 64;
 
       public:
 	/**
@@ -2312,6 +2396,18 @@ class Engine {
 	 */
 	void set_workflow(Pipeline pipeline) {
 		pipeline_ = std::move(pipeline);
+	}
+
+	/**
+	 * @brief Sets the batch size for MPI cross-node communication.
+	 *
+	 * Multiple payloads are accumulated and sent as a single MPI message
+	 * to amortize per-message overhead. Default is 64.
+	 *
+	 * @param n Number of payloads per batch.
+	 */
+	void set_batch_size(uint32_t n) {
+		batch_size_ = n;
 	}
 
 	/**
@@ -2362,7 +2458,7 @@ class Engine {
 				continue;
 
 			auto stage_ptr = pipeline_.stages_[sd.id];
-			auto exec      = std::make_shared<StageExecutor>(sd, stage_ptr, rank);
+			auto exec      = std::make_shared<StageExecutor>(sd, stage_ptr, rank, batch_size_);
 			executors.push_back(exec);
 			local_map[sd.id] = exec.get();
 		}

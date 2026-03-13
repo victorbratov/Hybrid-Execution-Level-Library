@@ -21,6 +21,7 @@
  */
 class Engine {
 	Pipeline pipeline_;
+	uint32_t batch_size_ = 64;
 
       public:
 	/**
@@ -29,6 +30,18 @@ class Engine {
 	 */
 	void set_workflow(Pipeline pipeline) {
 		pipeline_ = std::move(pipeline);
+	}
+
+	/**
+	 * @brief Sets the batch size for MPI cross-node communication.
+	 *
+	 * Multiple payloads are accumulated and sent as a single MPI message
+	 * to amortize per-message overhead. Default is 64.
+	 *
+	 * @param n Number of payloads per batch.
+	 */
+	void set_batch_size(uint32_t n) {
+		batch_size_ = n;
 	}
 
 	/**
@@ -79,7 +92,7 @@ class Engine {
 				continue;
 
 			auto stage_ptr = pipeline_.stages_[sd.id];
-			auto exec      = std::make_shared<StageExecutor>(sd, stage_ptr, rank);
+			auto exec      = std::make_shared<StageExecutor>(sd, stage_ptr, rank, batch_size_);
 			executors.push_back(exec);
 			local_map[sd.id] = exec.get();
 		}

@@ -86,56 +86,56 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		const uint64_t item_count      = (argc >= 2) ? parse_u64(argv[1], "items") : 20000ULL;
-		const uint32_t rounds_per_farm = (argc >= 3) ? static_cast<uint32_t>(parse_u64(argv[2], "rounds_per_farm")) : 12000U;
-		const uint32_t detected_cores  = std::max(1u, std::thread::hardware_concurrency());
-		const uint32_t farm_threads    = (argc >= 4) ? static_cast<uint32_t>(parse_u64(argv[3], "farm_threads")) : detected_cores;
-		const uint64_t seed            = (argc >= 5) ? parse_u64(argv[4], "seed") : 1337ULL;
+		const uint64_t item_count       = (argc >= 2) ? parse_u64(argv[1], "items") : 20000ULL;
+		const uint32_t rounds_per_farm  = (argc >= 3) ? static_cast<uint32_t>(parse_u64(argv[2], "rounds_per_farm")) : 12000U;
+		const uint32_t detected_cores   = std::max(1u, std::thread::hardware_concurrency());
+		const uint32_t farm_threads     = (argc >= 4) ? static_cast<uint32_t>(parse_u64(argv[3], "farm_threads")) : detected_cores;
+		const uint64_t seed             = (argc >= 5) ? parse_u64(argv[4], "seed") : 1337ULL;
 		const uint64_t min_seconds      = (argc >= 6) ? parse_u64(argv[5], "min_seconds") : 30ULL;
 		uint64_t       total_items_seen = 0;
 		uint64_t       total_checksum   = 0;
 		uint64_t       epochs           = 0;
-		const auto start = std::chrono::steady_clock::now();
-		const auto deadline = start + std::chrono::seconds(min_seconds);
+		const auto     start            = std::chrono::steady_clock::now();
+		const auto     deadline         = start + std::chrono::seconds(min_seconds);
 
 		do {
-			auto stats = std::make_shared<RunStats>();
-			SourceStage<WorkItem> source(make_source(item_count, seed + epochs * 0x9E3779B97F4A7C15ULL));
+			auto                            stats = std::make_shared<RunStats>();
+			SourceStage<WorkItem>           source(make_source(item_count, seed + epochs * 0x9E3779B97F4A7C15ULL));
 			FilterStage<WorkItem, WorkItem> filter_a([](const WorkItem& item) {
 				return WorkItem{item.id, item.value ^ (item.id * 0xD6E8FEB86659FD93ULL)};
 			});
-			FarmStage<WorkItem, WorkItem> farm_a([rounds_per_farm](const WorkItem& item) {
-				return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0xA24BAED4963EE407ULL)};
-			});
+			FarmStage<WorkItem, WorkItem>   farm_a([rounds_per_farm](const WorkItem& item) {
+                                return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0xA24BAED4963EE407ULL)};
+                        });
 			FilterStage<WorkItem, WorkItem> filter_b([](const WorkItem& item) {
 				return WorkItem{item.id, std::rotl(item.value, 17) ^ splitmix64(item.id + 11)};
 			});
-			FarmStage<WorkItem, WorkItem> farm_b([rounds_per_farm](const WorkItem& item) {
-				return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0x9FB21C651E98DF25ULL)};
-			});
+			FarmStage<WorkItem, WorkItem>   farm_b([rounds_per_farm](const WorkItem& item) {
+                                return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0x9FB21C651E98DF25ULL)};
+                        });
 			FilterStage<WorkItem, WorkItem> filter_c([](const WorkItem& item) {
 				const uint64_t mixed = item.value ^ (item.id + 0xBF58476D1CE4E5B9ULL);
 				return WorkItem{item.id, splitmix64(mixed)};
 			});
-			FarmStage<WorkItem, WorkItem> farm_c([rounds_per_farm](const WorkItem& item) {
-				return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0xF1357AEA2E62A9C5ULL)};
-			});
+			FarmStage<WorkItem, WorkItem>   farm_c([rounds_per_farm](const WorkItem& item) {
+                                return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0xF1357AEA2E62A9C5ULL)};
+                        });
 			FilterStage<WorkItem, WorkItem> filter_d([](const WorkItem& item) {
 				return WorkItem{item.id, (item.value * 3ULL) ^ std::rotr(item.value, 7)};
 			});
-			FarmStage<WorkItem, WorkItem> farm_d([rounds_per_farm](const WorkItem& item) {
-				return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0x94D049BB133111EBULL)};
-			});
+			FarmStage<WorkItem, WorkItem>   farm_d([rounds_per_farm](const WorkItem& item) {
+                                return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0x94D049BB133111EBULL)};
+                        });
 			FilterStage<WorkItem, WorkItem> filter_e([](const WorkItem& item) {
 				return WorkItem{item.id, splitmix64(item.value ^ (item.id * 0x9E3779B97F4A7C15ULL))};
 			});
-			FarmStage<WorkItem, WorkItem> farm_e([rounds_per_farm](const WorkItem& item) {
-				return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0x3C79AC492BA7B653ULL)};
-			});
-			SinkStage<WorkItem> sink([stats](const WorkItem& item) {
-				++stats->items_seen;
-				stats->checksum ^= std::rotl(item.value, static_cast<int>(item.id & 63ULL));
-			});
+			FarmStage<WorkItem, WorkItem>   farm_e([rounds_per_farm](const WorkItem& item) {
+                                return WorkItem{item.id, burn_cpu(item.value, rounds_per_farm, 0x3C79AC492BA7B653ULL)};
+                        });
+			SinkStage<WorkItem>             sink([stats](const WorkItem& item) {
+                                ++stats->items_seen;
+                                stats->checksum ^= std::rotl(item.value, static_cast<int>(item.id & 63ULL));
+                        });
 
 			const uint32_t planner_pressure = detected_cores + 1;
 			source.requested_concurrency    = detected_cores;
@@ -151,15 +151,14 @@ int main(int argc, char** argv) {
 			farm_e.concurrency(std::max(1u, farm_threads));
 
 			Engine engine;
-			engine.set_workflow(std::move(source) | std::move(filter_a) | std::move(farm_a) | std::move(filter_b) |
-			                    std::move(farm_b) | std::move(filter_c) | std::move(farm_c) | std::move(filter_d) |
-			                    std::move(farm_d) | std::move(filter_e) | std::move(farm_e) | std::move(sink));
+			engine.set_workflow(std::move(source) | std::move(filter_a) | std::move(farm_a) | std::move(filter_b) | std::move(farm_b) | std::move(filter_c) | std::move(farm_c) | std::move(filter_d) | std::move(farm_d) | std::move(filter_e) | std::move(farm_e) | std::move(sink));
+			engine.set_batch_size(1024);
 			engine.execute();
 
-			const unsigned long long local_seen = static_cast<unsigned long long>(stats->items_seen);
-			const unsigned long long local_xor = static_cast<unsigned long long>(stats->checksum);
+			const unsigned long long local_seen  = static_cast<unsigned long long>(stats->items_seen);
+			const unsigned long long local_xor   = static_cast<unsigned long long>(stats->checksum);
 			unsigned long long       global_seen = 0;
-			unsigned long long       global_xor = 0;
+			unsigned long long       global_xor  = 0;
 			MPI_Reduce(&local_seen, &global_seen, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
 			MPI_Reduce(&local_xor, &global_xor, 1, MPI_UNSIGNED_LONG_LONG, MPI_BXOR, 0, MPI_COMM_WORLD);
 

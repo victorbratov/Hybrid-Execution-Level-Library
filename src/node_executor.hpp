@@ -99,9 +99,15 @@ class StageExecutor {
 
 	std::atomic<bool> mpi_receiver_should_stop_{false};
 
-	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank) :
-	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank) {
+	uint32_t             batch_size_;
+	std::vector<Payload> send_buffer_;
+
+	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank,
+	              uint32_t batch_size = 64) :
+	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank),
+	        batch_size_(batch_size) {
 		metrics.stage_id = sd_.id;
+		send_buffer_.reserve(batch_size_);
 	}
 
 	void resolve_connections(
@@ -198,29 +204,47 @@ class StageExecutor {
 				continue;
 			}
 
-			metrics.items_received.fetch_add(1, std::memory_order_relaxed);
 			metrics.bytes_received.fetch_add(
 			        static_cast<uint64_t>(count),
 			        std::memory_order_relaxed);
 
-			Message msg;
-			msg.payload = deserialize_payload(buf);
-			queue_.push(std::move(msg));
+			auto batch = deserialize_batch(buf);
+			metrics.items_received.fetch_add(
+			        static_cast<uint64_t>(batch.size()),
+			        std::memory_order_relaxed);
+
+			for (auto& payload : batch) {
+				queue_.push(Message{.payload = std::move(payload)});
+			}
 		}
 
 		logger().debug("Stage {} MPI receiver exiting", sd_.id);
 	}
 
+	void flush_remote_batch() {
+		if (send_buffer_.empty() || remote_next_ranks_.empty())
+			return;
+
+		auto buf = serialize_batch(send_buffer_);
+		for (int dest : remote_next_ranks_) {
+			ScopedTimer timer(metrics.mpi_send_time_us);
+			MPI_Send(buf.data(), static_cast<int>(buf.size()), MPI_BYTE, dest, sd_.output_tag, MPI_COMM_WORLD);
+			metrics.bytes_sent.fetch_add(
+			        static_cast<uint64_t>(buf.size()),
+			        std::memory_order_relaxed);
+		}
+		metrics.items_sent.fetch_add(
+		        static_cast<uint64_t>(send_buffer_.size()) * remote_next_ranks_.size(),
+		        std::memory_order_relaxed);
+
+		send_buffer_.clear();
+	}
+
 	void send_to_next(Payload res) {
 		if (!remote_next_ranks_.empty()) {
-			auto buf = serialize_payload(res);
-			for (int dest : remote_next_ranks_) {
-				ScopedTimer timer(metrics.mpi_send_time_us);
-				MPI_Send(buf.data(), static_cast<int>(buf.size()), MPI_BYTE, dest, sd_.output_tag, MPI_COMM_WORLD);
-				metrics.items_sent.fetch_add(1, std::memory_order_relaxed);
-				metrics.bytes_sent.fetch_add(
-				        static_cast<uint64_t>(buf.size()),
-				        std::memory_order_relaxed);
+			send_buffer_.push_back(res);
+			if (send_buffer_.size() >= batch_size_) {
+				flush_remote_batch();
 			}
 		}
 
@@ -235,6 +259,7 @@ class StageExecutor {
 	}
 
 	void send_eos_to_next() {
+		flush_remote_batch();
 		for (auto* q : local_next_queues_) {
 			q->push(Message{.eos = true});
 			logger().debug("Stage {} sent LOCAL EOS to next", sd_.id);
