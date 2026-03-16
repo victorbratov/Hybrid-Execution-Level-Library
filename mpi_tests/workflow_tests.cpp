@@ -60,13 +60,13 @@ MPI_TEST_CASE("mpi workflow source_filter_sink executes end-to-end", 2) {
 MPI_TEST_CASE("mpi workflow source_farm_sink executes end-to-end", 2) {
 	std::vector<int> results;
 
-	SourceStage<int>            source(make_input());
-	FarmStage<int, int>         farm([](const int& v) {
+	SourceStage<int>    source(make_input());
+	FarmStage<int, int> farm([](const int& v) {
 		return v * 10;
 	});
-	SinkStage<int>              sink([&results](const int& value) {
-		results.push_back(value);
-	});
+	SinkStage<int>      sink([&results](const int& value) {
+                results.push_back(value);
+        });
 
 	// Force mapping: source on rank 0, farm on rank 1, sink back on rank 0.
 	const uint32_t cores         = std::max(1u, std::thread::hardware_concurrency());
@@ -95,17 +95,17 @@ MPI_TEST_CASE("mpi workflow with multiple filters and farms executes end-to-end"
 		return v + 1;
 	});
 	FarmStage<int, int>   farm_a([](const int& v) {
-		return v * 3;
-	});
+                return v * 3;
+        });
 	FilterStage<int, int> filter_b([](const int& v) {
 		return v - 2;
 	});
 	FarmStage<int, int>   farm_b([](const int& v) {
-		return v * v;
-	});
+                return v * v;
+        });
 	SinkStage<int>        sink([&local_results](const int& value) {
-		local_results.push_back(value);
-	});
+                local_results.push_back(value);
+        });
 
 	// Encourage distribution across ranks while keeping all stages valid.
 	const uint32_t cores           = std::max(1u, std::thread::hardware_concurrency());
@@ -115,8 +115,7 @@ MPI_TEST_CASE("mpi workflow with multiple filters and farms executes end-to-end"
 	filter_b.requested_concurrency = cores + 1;
 	farm_b.requested_concurrency   = cores + 1;
 
-	auto workflow = std::move(source) | std::move(filter_a) | std::move(farm_a) | std::move(filter_b) | std::move(farm_b) |
-	                std::move(sink);
+	auto workflow = std::move(source) | std::move(filter_a) | std::move(farm_a) | std::move(filter_b) | std::move(farm_b) | std::move(sink);
 
 	Engine engine;
 	engine.set_workflow(std::move(workflow));
@@ -163,36 +162,35 @@ MPI_TEST_CASE("mpi farm requested concurrency is respected and work is paralleli
 	farm_active_workers.store(0, std::memory_order_relaxed);
 	farm_max_active_workers.store(0, std::memory_order_relaxed);
 
-	const int      item_count = 64;
-	const uint32_t cores      = std::max(1u, std::thread::hardware_concurrency());
-	const uint32_t desired    = std::min<uint32_t>(4, cores);
+	const int        item_count = 64;
+	const uint32_t   cores      = std::max(1u, std::thread::hardware_concurrency());
+	const uint32_t   desired    = std::min<uint32_t>(4, cores);
+	std::vector<int> results;
 
-	SourceStage<int> source(make_many_input(item_count));
+	SourceStage<int>    source(make_many_input(item_count));
 	FarmStage<int, int> farm([](const int& v) {
 		const int active_now = farm_active_workers.fetch_add(1, std::memory_order_relaxed) + 1;
 		int       observed   = farm_max_active_workers.load(std::memory_order_relaxed);
-		while (active_now > observed &&
-		       !farm_max_active_workers.compare_exchange_weak(
-		               observed,
-		               active_now,
-		               std::memory_order_relaxed,
-		               std::memory_order_relaxed)) {
+		while (active_now > observed && !farm_max_active_workers.compare_exchange_weak(observed, active_now, std::memory_order_relaxed, std::memory_order_relaxed)) {
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(40));
 		farm_active_workers.fetch_sub(1, std::memory_order_relaxed);
 		return v;
 	});
+	SinkStage<int>      sink([&results](const int& value) {
+                results.push_back(value);
+        });
 
 	// Force planner to place source on rank 0 and farm on rank 1.
 	source.requested_concurrency = cores;
 	farm.requested_concurrency   = desired;
 
-	auto workflow = std::move(source) | std::move(farm);
+	auto pipeline = std::move(source) | std::move(farm) | std::move(sink);
 
 	int planned_farm_threads = 0;
 	if (test_rank == 0) {
 		std::vector<int> cores_per_node(test_nb_procs, static_cast<int>(cores));
-		auto             plan = Planner::plan(workflow, static_cast<uint16_t>(test_nb_procs), cores_per_node);
+		auto             plan = Planner::plan(pipeline, static_cast<uint16_t>(test_nb_procs), cores_per_node);
 		for (const auto& stage : plan.stages) {
 			if (stage.type == StageType::FARM) {
 				planned_farm_threads = static_cast<int>(stage.assigned_threads);
@@ -203,10 +201,10 @@ MPI_TEST_CASE("mpi farm requested concurrency is respected and work is paralleli
 	MPI_Bcast(&planned_farm_threads, 1, MPI_INT, 0, test_comm);
 
 	Engine engine;
-	engine.set_workflow(std::move(workflow));
+	engine.set_workflow(std::move(pipeline));
 	engine.execute();
 
-	const int local_max = farm_max_active_workers.load(std::memory_order_relaxed);
+	const int local_max  = farm_max_active_workers.load(std::memory_order_relaxed);
 	int       global_max = 0;
 	MPI_Reduce(&local_max, &global_max, 1, MPI_INT, MPI_MAX, 0, test_comm);
 

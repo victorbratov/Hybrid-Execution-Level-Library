@@ -1,5 +1,5 @@
 CXX      := "mpic++"
-CXXFLAGS := "-std=c++20 -Wall -Wextra -O3 -I./include -I. -I./out"
+CXXFLAGS := "-std=c++20 -g -Wall -Wextra -Werror -O3 -I./include -I. -I./out"
 SCRIPTS  := justfile_directory() / "scripts"
 
 OUT_DIR     := "out"

@@ -102,8 +102,7 @@ class StageExecutor {
 	uint32_t             batch_size_;
 	std::vector<Payload> send_buffer_;
 
-	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank,
-	              uint32_t batch_size = 64) :
+	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank, uint32_t batch_size = 64) :
 	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank),
 	        batch_size_(batch_size) {
 		metrics.stage_id = sd_.id;
@@ -196,7 +195,7 @@ class StageExecutor {
 				               num_remote_predecessors_,
 				               status.MPI_SOURCE);
 				if (eos_received >= num_remote_predecessors_) {
-					queue_.push(Message{.eos = true});
+					queue_.push(Message{.payload = {}, .eos = true});
 					logger().debug("Stage {} MPI receiver injecting EOS into queue",
 					               sd_.id);
 					break;
@@ -261,7 +260,7 @@ class StageExecutor {
 	void send_eos_to_next() {
 		flush_remote_batch();
 		for (auto* q : local_next_queues_) {
-			q->push(Message{.eos = true});
+			q->push(Message{.payload = {}, .eos = true});
 			logger().debug("Stage {} sent LOCAL EOS to next", sd_.id);
 		}
 		for (int dest : remote_next_ranks_) {
@@ -366,7 +365,7 @@ class StageExecutor {
 							continue;
 						}
 						for (uint32_t k = 1; k < sd_.assigned_threads; ++k) {
-							queue_.push(Message{.eos = true});
+							queue_.push(Message{.payload = {}, .eos = true});
 						}
 						break;
 					}
@@ -391,7 +390,7 @@ class StageExecutor {
 				               remaining);
 
 				if (remaining == 0) {
-					results.push(Message{.eos = true});
+					results.push(Message{.payload = {}, .eos = true});
 				}
 			});
 		}

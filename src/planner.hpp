@@ -9,7 +9,7 @@
  */
 class Planner {
       public:
-	static WorkflowPlan plan(const Pipeline& pipeline, uint16_t world_size, const std::vector<int> cores_per_node) {
+	static WorkflowPlan plan(const Pipeline<void, void>& pipeline, uint16_t world_size, const std::vector<int> cores_per_node) {
 		WorkflowPlan wp;
 		wp.num_stages = pipeline.stages_.size();
 

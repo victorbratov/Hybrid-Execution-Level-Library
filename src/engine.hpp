@@ -20,15 +20,15 @@
  * the assigned stages on the local node.
  */
 class Engine {
-	Pipeline pipeline_;
-	uint32_t batch_size_ = 64;
+	Pipeline<void, void> pipeline_;
+	uint32_t             batch_size_ = 64;
 
       public:
 	/**
 	 * @brief Sets the workflow pipeline to be executed.
 	 * @param pipeline The pipeline to execute.
 	 */
-	void set_workflow(Pipeline pipeline) {
+	void set_workflow(Pipeline<void, void> pipeline) {
 		pipeline_ = std::move(pipeline);
 	}
 

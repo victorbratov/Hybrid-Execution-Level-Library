@@ -60,6 +60,7 @@ struct WorkflowPlan {
 #include <iterator>
 #include <optional>
 #include <type_traits>
+#include <typeindex>
 #include <utility>
 
 #include <cassert>
@@ -526,6 +527,9 @@ class StageBase {
 	StageType type_;
 	uint32_t  requested_concurrency = 1;
 
+	using InputType  = void;
+	using OutputType = void;
+
 	virtual ~StageBase() = default;
 
 	virtual Payload execute(const Payload&) = 0;
@@ -547,6 +551,8 @@ class SourceStage : public StageBase {
 	generator<Output> generator_;
 
       public:
+	using OutputType = Output;
+
 	explicit SourceStage(generator<Output> generator) :
 	        generator_(std::move(generator)) {
 		type_ = StageType::SOURCE;
@@ -576,6 +582,8 @@ class SinkStage : public StageBase {
 	std::function<void(const Input&)> consumer_fn_;
 
       public:
+	using InputType = Input;
+
 	explicit SinkStage(std::function<void(const Input&)> consumer_fn) :
 	        consumer_fn_(consumer_fn) {
 		type_ = StageType::SINK;
@@ -602,6 +610,9 @@ class FilterStage : public StageBase {
 	std::function<Output(const Input&)> processor_fn_;
 
       public:
+	using InputType  = Input;
+	using OutputType = Output;
+
 	explicit FilterStage(std::function<Output(const Input&)> processor_fn) :
 	        processor_fn_(processor_fn) {
 		type_ = StageType::FILTER;
@@ -624,6 +635,9 @@ class FarmStage : public StageBase {
 	std::function<Output(const Input&)> processor_fn_;
 
       public:
+	using InputType  = Input;
+	using OutputType = Output;
+
 	explicit FarmStage(std::function<Output(const Input&)> processor_fn) :
 	        processor_fn_(processor_fn) {
 		type_ = StageType::FARM;
@@ -639,6 +653,42 @@ class FarmStage : public StageBase {
 		return processor_fn_(input_item.get<Input>());
 	};
 };
+
+template <typename T>
+struct is_sink_stage : std::false_type {};
+
+template <PayloadCompatible T>
+struct is_sink_stage<SinkStage<T>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_sink_stage_v = is_sink_stage<T>::value;
+
+template <typename T>
+struct is_source_stage : std::false_type {};
+
+template <PayloadCompatible T>
+struct is_source_stage<SourceStage<T>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_source_stage_v = is_source_stage<T>::value;
+
+template <typename T>
+struct is_filter_stage : std::false_type {};
+
+template <PayloadCompatible Input, PayloadCompatible Output>
+struct is_filter_stage<FilterStage<Input, Output>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_filter_stage_v = is_filter_stage<T>::value;
+
+template <typename T>
+struct is_farm_stage : std::false_type {};
+
+template <PayloadCompatible Input, PayloadCompatible Output>
+struct is_farm_stage<FarmStage<Input, Output>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_farm_stage_v = is_farm_stage<T>::value;
 
 /**
  * @file serialization.hpp
@@ -723,14 +773,20 @@ inline std::vector<Payload> deserialize_batch(const std::vector<uint8_t>& buf) {
 	return result;
 }
 
+#include <cassert>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 /**
  * @class Pipeline
  * @brief Represents a sequence of connected processing stages.
  */
+template <typename Input, typename Output>
 class Pipeline {
+	using InputType  = Input;
+	using OutputType = Output;
+
       public:
 	std::vector<std::shared_ptr<StageBase>> stages_;
 
@@ -739,6 +795,10 @@ class Pipeline {
 	explicit Pipeline(std::shared_ptr<StageBase> stage) {
 		stages_.push_back(stage);
 	};
+
+	template <typename OtherInput, typename OtherOutput>
+	Pipeline(Pipeline<OtherInput, OtherOutput>&& other) : stages_(std::move(other.stages_)) {
+	}
 
 	Pipeline operator|(Pipeline&& rhs) {
 		for (auto& stage : rhs.stages_) {
@@ -749,15 +809,22 @@ class Pipeline {
 };
 
 template <typename L, typename R, typename = std::enable_if_t<std::is_base_of_v<StageBase, L> && std::is_base_of_v<StageBase, R>>>
-Pipeline operator|(L&& lhs, R&& rhs) {
-	Pipeline pipeline;
+Pipeline<typename std::decay_t<L>::InputType, typename std::decay_t<R>::OutputType> operator|(L&& lhs, R&& rhs) {
+	static_assert(
+	        std::is_same_v<typename std::decay_t<L>::OutputType, typename std::decay_t<R>::InputType>,
+	        "Stage Output type and next Stage Input type must match");
+	static_assert(!is_sink_stage_v<L>, "LHS stage cannot be a SinkStage");
+	static_assert(!is_source_stage_v<R>, "RHS stage cannot be a SourceStage");
+	Pipeline<typename std::decay_t<L>::InputType, typename std::decay_t<R>::OutputType> pipeline;
 	pipeline.stages_.push_back(std::make_shared<std::decay_t<L>>(std::forward<L>(lhs)));
 	pipeline.stages_.push_back(std::make_shared<std::decay_t<R>>(std::forward<R>(rhs)));
 	return pipeline;
 };
 
-template <typename R, typename = std::enable_if_t<std::is_base_of_v<StageBase, R>>>
-Pipeline operator|(Pipeline&& lhs, R&& rhs) {
+template <typename PipelineInput, typename PipelineOutput, typename R, typename = std::enable_if_t<std::is_base_of_v<StageBase, R>>>
+Pipeline<PipelineInput, typename std::decay_t<R>::OutputType> operator|(Pipeline<PipelineInput, PipelineOutput>&& lhs, R&& rhs) {
+	static_assert(!is_source_stage_v<R>, "RHS stage cannot be a SourceStage");
+	static_assert(std::is_same_v<typename std::decay_t<R>::InputType, PipelineOutput>, "RHS stage Input type must match Pipeline Output type");
 	lhs.stages_.push_back(std::make_shared<std::decay_t<R>>(std::forward<R>(rhs)));
 	return std::move(lhs);
 };
@@ -770,7 +837,7 @@ Pipeline operator|(Pipeline&& lhs, R&& rhs) {
  */
 class Planner {
       public:
-	static WorkflowPlan plan(const Pipeline& pipeline, uint16_t world_size, const std::vector<int> cores_per_node) {
+	static WorkflowPlan plan(const Pipeline<void, void>& pipeline, uint16_t world_size, const std::vector<int> cores_per_node) {
 		WorkflowPlan wp;
 		wp.num_stages = pipeline.stages_.size();
 
@@ -1512,8 +1579,7 @@ class StageExecutor {
 	uint32_t             batch_size_;
 	std::vector<Payload> send_buffer_;
 
-	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank,
-	              uint32_t batch_size = 64) :
+	StageExecutor(StageDescriptor sd, std::shared_ptr<StageBase> stage, int rank, uint32_t batch_size = 64) :
 	        sd_(std::move(sd)), stage_(std::move(stage)), rank_(rank),
 	        batch_size_(batch_size) {
 		metrics.stage_id = sd_.id;
@@ -1606,7 +1672,7 @@ class StageExecutor {
 				               num_remote_predecessors_,
 				               status.MPI_SOURCE);
 				if (eos_received >= num_remote_predecessors_) {
-					queue_.push(Message{.eos = true});
+					queue_.push(Message{.payload = {}, .eos = true});
 					logger().debug("Stage {} MPI receiver injecting EOS into queue",
 					               sd_.id);
 					break;
@@ -1671,7 +1737,7 @@ class StageExecutor {
 	void send_eos_to_next() {
 		flush_remote_batch();
 		for (auto* q : local_next_queues_) {
-			q->push(Message{.eos = true});
+			q->push(Message{.payload = {}, .eos = true});
 			logger().debug("Stage {} sent LOCAL EOS to next", sd_.id);
 		}
 		for (int dest : remote_next_ranks_) {
@@ -1776,7 +1842,7 @@ class StageExecutor {
 							continue;
 						}
 						for (uint32_t k = 1; k < sd_.assigned_threads; ++k) {
-							queue_.push(Message{.eos = true});
+							queue_.push(Message{.payload = {}, .eos = true});
 						}
 						break;
 					}
@@ -1801,7 +1867,7 @@ class StageExecutor {
 				               remaining);
 
 				if (remaining == 0) {
-					results.push(Message{.eos = true});
+					results.push(Message{.payload = {}, .eos = true});
 				}
 			});
 		}
@@ -2386,15 +2452,15 @@ class MonitorCollector {
  * the assigned stages on the local node.
  */
 class Engine {
-	Pipeline pipeline_;
-	uint32_t batch_size_ = 64;
+	Pipeline<void, void> pipeline_;
+	uint32_t             batch_size_ = 64;
 
       public:
 	/**
 	 * @brief Sets the workflow pipeline to be executed.
 	 * @param pipeline The pipeline to execute.
 	 */
-	void set_workflow(Pipeline pipeline) {
+	void set_workflow(Pipeline<void, void> pipeline) {
 		pipeline_ = std::move(pipeline);
 	}
 

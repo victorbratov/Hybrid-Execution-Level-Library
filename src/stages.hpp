@@ -5,6 +5,7 @@
 #include <iterator>
 #include <optional>
 #include <type_traits>
+#include <typeindex>
 #include <utility>
 #include "./stage_descriptor.hpp"
 #include "./payload.hpp"
@@ -19,6 +20,9 @@ class StageBase {
 	uint32_t  id = 0;
 	StageType type_;
 	uint32_t  requested_concurrency = 1;
+
+	using InputType  = void;
+	using OutputType = void;
 
 	virtual ~StageBase() = default;
 
@@ -41,6 +45,8 @@ class SourceStage : public StageBase {
 	generator<Output> generator_;
 
       public:
+	using OutputType = Output;
+
 	explicit SourceStage(generator<Output> generator) :
 	        generator_(std::move(generator)) {
 		type_ = StageType::SOURCE;
@@ -70,6 +76,8 @@ class SinkStage : public StageBase {
 	std::function<void(const Input&)> consumer_fn_;
 
       public:
+	using InputType = Input;
+
 	explicit SinkStage(std::function<void(const Input&)> consumer_fn) :
 	        consumer_fn_(consumer_fn) {
 		type_ = StageType::SINK;
@@ -96,6 +104,9 @@ class FilterStage : public StageBase {
 	std::function<Output(const Input&)> processor_fn_;
 
       public:
+	using InputType  = Input;
+	using OutputType = Output;
+
 	explicit FilterStage(std::function<Output(const Input&)> processor_fn) :
 	        processor_fn_(processor_fn) {
 		type_ = StageType::FILTER;
@@ -118,6 +129,9 @@ class FarmStage : public StageBase {
 	std::function<Output(const Input&)> processor_fn_;
 
       public:
+	using InputType  = Input;
+	using OutputType = Output;
+
 	explicit FarmStage(std::function<Output(const Input&)> processor_fn) :
 	        processor_fn_(processor_fn) {
 		type_ = StageType::FARM;
@@ -133,3 +147,39 @@ class FarmStage : public StageBase {
 		return processor_fn_(input_item.get<Input>());
 	};
 };
+
+template <typename T>
+struct is_sink_stage : std::false_type {};
+
+template <PayloadCompatible T>
+struct is_sink_stage<SinkStage<T>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_sink_stage_v = is_sink_stage<T>::value;
+
+template <typename T>
+struct is_source_stage : std::false_type {};
+
+template <PayloadCompatible T>
+struct is_source_stage<SourceStage<T>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_source_stage_v = is_source_stage<T>::value;
+
+template <typename T>
+struct is_filter_stage : std::false_type {};
+
+template <PayloadCompatible Input, PayloadCompatible Output>
+struct is_filter_stage<FilterStage<Input, Output>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_filter_stage_v = is_filter_stage<T>::value;
+
+template <typename T>
+struct is_farm_stage : std::false_type {};
+
+template <PayloadCompatible Input, PayloadCompatible Output>
+struct is_farm_stage<FarmStage<Input, Output>> : std::true_type {};
+
+template <typename T>
+constexpr bool is_farm_stage_v = is_farm_stage<T>::value;
