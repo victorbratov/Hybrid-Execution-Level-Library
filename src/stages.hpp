@@ -35,6 +35,9 @@ class StageBase {
 	virtual void consume(const Payload&) {};
 };
 
+template <typename T>
+concept StageCompatible = std::is_base_of_v<StageBase, T>;
+
 /**
  * @class SourceStage
  * @brief A pipeline stage that acts as a data generator (no inputs, only outputs).

@@ -35,7 +35,7 @@ class Pipeline {
 	};
 };
 
-template <typename L, typename R, typename = std::enable_if_t<std::is_base_of_v<StageBase, L> && std::is_base_of_v<StageBase, R>>>
+template <StageCompatible L, StageCompatible R>
 Pipeline<typename std::decay_t<L>::InputType, typename std::decay_t<R>::OutputType> operator|(L&& lhs, R&& rhs) {
 	static_assert(
 	        std::is_same_v<typename std::decay_t<L>::OutputType, typename std::decay_t<R>::InputType>,
@@ -48,7 +48,7 @@ Pipeline<typename std::decay_t<L>::InputType, typename std::decay_t<R>::OutputTy
 	return pipeline;
 };
 
-template <typename PipelineInput, typename PipelineOutput, typename R, typename = std::enable_if_t<std::is_base_of_v<StageBase, R>>>
+template <typename PipelineInput, typename PipelineOutput, StageCompatible R>
 Pipeline<PipelineInput, typename std::decay_t<R>::OutputType> operator|(Pipeline<PipelineInput, PipelineOutput>&& lhs, R&& rhs) {
 	static_assert(!is_source_stage_v<R>, "RHS stage cannot be a SourceStage");
 	static_assert(std::is_same_v<typename std::decay_t<R>::InputType, PipelineOutput>, "RHS stage Input type must match Pipeline Output type");
