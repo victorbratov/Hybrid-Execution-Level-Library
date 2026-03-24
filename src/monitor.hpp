@@ -1,5 +1,6 @@
 #pragma once
 
+#include "./commons.hpp"
 #include "./logger.hpp"
 #include "./metrics.hpp"
 #include "./plan_pretty_print.hpp"
@@ -142,7 +143,11 @@ class NodeReporter {
 	}
 };
 
-constexpr int TELEMETRY_DEFAULT_PORT = 9100;
+inline int get_telemetry_port() {
+	return std::stoi(get_env("HELL_TELEMETRY_PORT", "9100"));
+}
+
+const int TELEMETRY_DEFAULT_PORT = get_telemetry_port();
 
 /**
  * @class MonitorCollector
@@ -162,9 +167,19 @@ class MonitorCollector {
 
       public:
 	explicit MonitorCollector(int                   world_size,
-	                          std::filesystem::path output_dir     = "metrics",
-	                          int                   telemetry_port = TELEMETRY_DEFAULT_PORT) :
-	        world_size_(world_size), output_dir_(std::move(output_dir)), latest_(world_size) {
+	                          std::filesystem::path output_dir     = "",
+	                          int                   telemetry_port = -1) :
+	        world_size_(world_size), latest_(world_size) {
+		if (output_dir.empty()) {
+			output_dir_ = get_env("HELL_METRICS_DIR", "metrics/" + get_current_datetime_str());
+		} else {
+			output_dir_ = std::move(output_dir);
+		}
+
+		if (telemetry_port == -1) {
+			telemetry_port = TELEMETRY_DEFAULT_PORT;
+		}
+
 		std::filesystem::create_directories(output_dir_);
 
 		udp_sock_ = ::socket(AF_INET, SOCK_DGRAM, 0);
@@ -283,7 +298,7 @@ class MonitorCollector {
 
 		std::ostringstream f;
 
-		f << "{\"timestamp\":\"" << current_time_str() << "\",\"nodes\":[";
+		f << "{\"timestamp\":\"" << get_timestamp_str() << "\",\"nodes\":[";
 
 		for (int i = 0; i < world_size_; ++i) {
 			auto& nm = latest_[i];
@@ -386,17 +401,4 @@ class MonitorCollector {
 		f << summary;
 	}
 
-	static std::string current_time_str() {
-		auto    now  = std::chrono::system_clock::now();
-		auto    time = std::chrono::system_clock::to_time_t(now);
-		std::tm tm;
-		localtime_r(&time, &tm);
-		return std::format("{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}",
-		                   tm.tm_year + 1900,
-		                   tm.tm_mon + 1,
-		                   tm.tm_mday,
-		                   tm.tm_hour,
-		                   tm.tm_min,
-		                   tm.tm_sec);
-	}
 };

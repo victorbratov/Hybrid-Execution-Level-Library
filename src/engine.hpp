@@ -101,16 +101,20 @@ class Engine {
 			exec->resolve_connections(local_map);
 		}
 
+		bool telemetry_enabled = get_env_bool("HELL_TELEMETRY_ENABLED", true);
+
 		std::unique_ptr<MonitorCollector> collector;
-		if (rank == 0) {
+		if (rank == 0 && telemetry_enabled) {
 			collector = std::make_unique<MonitorCollector>(world_size);
 			collector->start();
 			logger().debug("Monitor collector started");
 		}
 
 		NodeReporter reporter(rank);
-		for (auto& exec : executors) {
-			reporter.track_stage(&exec->metrics);
+		if (telemetry_enabled) {
+			for (auto& exec : executors) {
+				reporter.track_stage(&exec->metrics);
+			}
 		}
 
 		std::vector<std::jthread> stage_threads;
@@ -120,15 +124,19 @@ class Engine {
 			});
 		}
 
-		reporter.start();
+		if (telemetry_enabled) {
+			reporter.start();
+		}
 
 		for (auto& t : stage_threads)
 			t.join();
 
 		logger().debug("All stages done on node {}", rank);
 
-		reporter.stop();
-		logger().debug("Reporter stopped on node {}", rank);
+		if (telemetry_enabled) {
+			reporter.stop();
+			logger().debug("Reporter stopped on node {}", rank);
+		}
 
 		if (rank == 0 && collector) {
 			collector->stop();

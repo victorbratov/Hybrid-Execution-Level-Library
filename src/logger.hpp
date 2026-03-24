@@ -1,5 +1,6 @@
 #pragma once
 
+#include "./commons.hpp"
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -63,12 +64,16 @@ class Logger {
 	/**
 	 * @brief Initializes the Logger for this specific node.
 	 * @param rank The MPI rank of the node.
-	 * @param logs_dir_path The directory to store log files.
+	 * @param logs_dir_path The directory to store log files. If empty, uses HELL_LOGS_DIR env or "logs/<datetime>".
 	 */
-	void init(int rank, const std::filesystem::path& logs_dir_path = "logs") {
+	void init(int rank, std::filesystem::path logs_dir_path = "") {
 		{
 			std::lock_guard lock(mtx_);
 			rank_ = rank;
+
+			if (logs_dir_path.empty()) {
+				logs_dir_path = get_env("HELL_LOGS_DIR", "logs/" + get_current_datetime_str());
+			}
 
 			std::filesystem::create_directories(logs_dir_path);
 			auto log_file_path = logs_dir_path / std::format("node_{:03d}.log", rank_);
@@ -167,12 +172,7 @@ class Logger {
 	Logger() = default;
 
 	std::string timestamp() const {
-		auto    now  = std::chrono::system_clock::now();
-		auto    ms   = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-		auto    time = std::chrono::system_clock::to_time_t(now);
-		std::tm tm;
-		localtime_r(&time, &tm);
-		return std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ms.count());
+		return get_timestamp_str();
 	}
 
 	void log_internal(LogLevel level, const std::string& message) {

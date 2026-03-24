@@ -1291,6 +1291,68 @@ inline uint64_t rss_bytes() {
 #endif
 }
 
+#include <chrono>
+#include <cstdlib>
+#include <format>
+#include <string>
+
+/**
+ * @brief Retrieves an environment variable or returns a default value.
+ */
+inline std::string get_env(const std::string& key, const std::string& default_value) {
+	const char* val = std::getenv(key.c_str());
+	return val ? std::string(val) : default_value;
+}
+
+/**
+ * @brief Retrieves a boolean environment variable or returns a default value.
+ */
+inline bool get_env_bool(const std::string& key, bool default_value) {
+	const char* val = std::getenv(key.c_str());
+	if (!val)
+		return default_value;
+	std::string s(val);
+	for (auto& c : s)
+		c = static_cast<char>(std::tolower(c));
+	return s == "true" || s == "1" || s == "yes" || s == "on";
+}
+
+/**
+ * @brief Gets a filesystem-safe datetime string (e.g., "20260324_120000").
+ */
+inline std::string get_current_datetime_str() {
+	auto    now  = std::chrono::system_clock::now();
+	auto    time = std::chrono::system_clock::to_time_t(now);
+	std::tm tm;
+	localtime_r(&time, &tm);
+	return std::format("{:04d}{:02d}{:02d}_{:02d}{:02d}{:02d}",
+	                   tm.tm_year + 1900,
+	                   tm.tm_mon + 1,
+	                   tm.tm_mday,
+	                   tm.tm_hour,
+	                   tm.tm_min,
+	                   tm.tm_sec);
+}
+
+/**
+ * @brief Gets a human-readable timestamp for logging.
+ */
+inline std::string get_timestamp_str() {
+	auto    now  = std::chrono::system_clock::now();
+	auto    ms   = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+	auto    time = std::chrono::system_clock::to_time_t(now);
+	std::tm tm;
+	localtime_r(&time, &tm);
+	return std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}",
+	                   tm.tm_year + 1900,
+	                   tm.tm_mon + 1,
+	                   tm.tm_mday,
+	                   tm.tm_hour,
+	                   tm.tm_min,
+	                   tm.tm_sec,
+	                   ms.count());
+}
+
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -1354,12 +1416,16 @@ class Logger {
 	/**
 	 * @brief Initializes the Logger for this specific node.
 	 * @param rank The MPI rank of the node.
-	 * @param logs_dir_path The directory to store log files.
+	 * @param logs_dir_path The directory to store log files. If empty, uses HELL_LOGS_DIR env or "logs/<datetime>".
 	 */
-	void init(int rank, const std::filesystem::path& logs_dir_path = "logs") {
+	void init(int rank, std::filesystem::path logs_dir_path = "") {
 		{
 			std::lock_guard lock(mtx_);
 			rank_ = rank;
+
+			if (logs_dir_path.empty()) {
+				logs_dir_path = get_env("HELL_LOGS_DIR", "logs/" + get_current_datetime_str());
+			}
 
 			std::filesystem::create_directories(logs_dir_path);
 			auto log_file_path = logs_dir_path / std::format("node_{:03d}.log", rank_);
@@ -1458,12 +1524,7 @@ class Logger {
 	Logger() = default;
 
 	std::string timestamp() const {
-		auto    now  = std::chrono::system_clock::now();
-		auto    ms   = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-		auto    time = std::chrono::system_clock::to_time_t(now);
-		std::tm tm;
-		localtime_r(&time, &tm);
-		return std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ms.count());
+		return get_timestamp_str();
 	}
 
 	void log_internal(LogLevel level, const std::string& message) {
@@ -2192,7 +2253,11 @@ class NodeReporter {
 	}
 };
 
-constexpr int TELEMETRY_DEFAULT_PORT = 9100;
+inline int get_telemetry_port() {
+	return std::stoi(get_env("HELL_TELEMETRY_PORT", "9100"));
+}
+
+const int TELEMETRY_DEFAULT_PORT = get_telemetry_port();
 
 /**
  * @class MonitorCollector
@@ -2212,9 +2277,19 @@ class MonitorCollector {
 
       public:
 	explicit MonitorCollector(int                   world_size,
-	                          std::filesystem::path output_dir     = "metrics",
-	                          int                   telemetry_port = TELEMETRY_DEFAULT_PORT) :
-	        world_size_(world_size), output_dir_(std::move(output_dir)), latest_(world_size) {
+	                          std::filesystem::path output_dir     = "",
+	                          int                   telemetry_port = -1) :
+	        world_size_(world_size), latest_(world_size) {
+		if (output_dir.empty()) {
+			output_dir_ = get_env("HELL_METRICS_DIR", "metrics/" + get_current_datetime_str());
+		} else {
+			output_dir_ = std::move(output_dir);
+		}
+
+		if (telemetry_port == -1) {
+			telemetry_port = TELEMETRY_DEFAULT_PORT;
+		}
+
 		std::filesystem::create_directories(output_dir_);
 
 		udp_sock_ = ::socket(AF_INET, SOCK_DGRAM, 0);
@@ -2333,7 +2408,7 @@ class MonitorCollector {
 
 		std::ostringstream f;
 
-		f << "{\"timestamp\":\"" << current_time_str() << "\",\"nodes\":[";
+		f << "{\"timestamp\":\"" << get_timestamp_str() << "\",\"nodes\":[";
 
 		for (int i = 0; i < world_size_; ++i) {
 			auto& nm = latest_[i];
@@ -2436,19 +2511,6 @@ class MonitorCollector {
 		f << summary;
 	}
 
-	static std::string current_time_str() {
-		auto    now  = std::chrono::system_clock::now();
-		auto    time = std::chrono::system_clock::to_time_t(now);
-		std::tm tm;
-		localtime_r(&time, &tm);
-		return std::format("{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}",
-		                   tm.tm_year + 1900,
-		                   tm.tm_mon + 1,
-		                   tm.tm_mday,
-		                   tm.tm_hour,
-		                   tm.tm_min,
-		                   tm.tm_sec);
-	}
 };
 
 #include <thread>
@@ -2543,16 +2605,20 @@ class Engine {
 			exec->resolve_connections(local_map);
 		}
 
+		bool telemetry_enabled = get_env_bool("HELL_TELEMETRY_ENABLED", true);
+
 		std::unique_ptr<MonitorCollector> collector;
-		if (rank == 0) {
+		if (rank == 0 && telemetry_enabled) {
 			collector = std::make_unique<MonitorCollector>(world_size);
 			collector->start();
 			logger().debug("Monitor collector started");
 		}
 
 		NodeReporter reporter(rank);
-		for (auto& exec : executors) {
-			reporter.track_stage(&exec->metrics);
+		if (telemetry_enabled) {
+			for (auto& exec : executors) {
+				reporter.track_stage(&exec->metrics);
+			}
 		}
 
 		std::vector<std::jthread> stage_threads;
@@ -2562,15 +2628,19 @@ class Engine {
 			});
 		}
 
-		reporter.start();
+		if (telemetry_enabled) {
+			reporter.start();
+		}
 
 		for (auto& t : stage_threads)
 			t.join();
 
 		logger().debug("All stages done on node {}", rank);
 
-		reporter.stop();
-		logger().debug("Reporter stopped on node {}", rank);
+		if (telemetry_enabled) {
+			reporter.stop();
+			logger().debug("Reporter stopped on node {}", rank);
+		}
 
 		if (rank == 0 && collector) {
 			collector->stop();
