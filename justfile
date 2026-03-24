@@ -15,6 +15,8 @@ EXAMPLE_SOBEL_SRC := "examples/sobel_edge_detection.cpp"
 EXAMPLE_SOBEL_BIN := "build/sobel_edge_detection"
 EXAMPLE_TELEMETRY_SRC := "examples/telemetry_stress_workflow.cpp"
 EXAMPLE_TELEMETRY_BIN := "build/telemetry_stress_workflow"
+EXAMPLE_MAPPING_SRC := "examples/mapping_benchmark.cpp"
+EXAMPLE_MAPPING_BIN := "build/mapping_benchmark"
 
 # ======================================================================
 # Local Development
@@ -81,6 +83,17 @@ build-example-telemetry: bundle
 	@echo "=== BUILDING TELEMETRY STRESS EXAMPLE ==="
 	@mkdir -p {{BUILD_DIR}}
 	{{CXX}} {{CXXFLAGS}} {{EXAMPLE_TELEMETRY_SRC}} -o {{EXAMPLE_TELEMETRY_BIN}}
+
+# Build the mapping benchmark
+build-benchmark-mapping: bundle
+	@echo "=== BUILDING MAPPING BENCHMARK ==="
+	@mkdir -p {{BUILD_DIR}}
+	{{CXX}} {{CXXFLAGS}} {{EXAMPLE_MAPPING_SRC}} -o {{EXAMPLE_MAPPING_BIN}}
+
+# Run the mapping benchmark locally
+run-benchmark-mapping np='2' items='10000' stages='4' threads='' iters='5000': build-benchmark-mapping
+	@echo "=== RUNNING MAPPING BENCHMARK (np={{np}}) ==="
+	mpirun -np {{np}} --oversubscribe ./{{EXAMPLE_MAPPING_BIN}} {{items}} {{stages}} "{{threads}}" {{iters}}
 
 # Run the telemetry stress example locally with configurable parameters
 run-example-telemetry np='4' items='20000' rounds='12000' threads='8' seed='1337' mins='30':
@@ -155,6 +168,12 @@ cluster-example-sobel: bundle
 	{{SCRIPTS}}/deploy.sh binary build/linux/sobel
 	{{SCRIPTS}}/deploy.sh file input.pgm /app/build/input.pgm mpi0
 	{{SCRIPTS}}/mpirun.sh /app/build/sobel input.pgm output.pgm
+
+# Cross-compile, deploy, and run the mapping benchmark on the cluster
+cluster-benchmark-mapping items='10000' stages='8' threads='' iters='10000': bundle
+	{{SCRIPTS}}/cross-build.sh build mapping_bench examples/mapping_benchmark.cpp
+	{{SCRIPTS}}/deploy.sh binary build/linux/mapping_bench
+	{{SCRIPTS}}/mpirun.sh /app/build/mapping_bench {{items}} {{stages}} "{{threads}}" {{iters}}
 
 # Cross-compile, deploy, and run any source file on the cluster (e.g., just cluster-run src=examples/foo.cpp)
 cluster-run src args='': bundle
