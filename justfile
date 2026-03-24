@@ -186,5 +186,6 @@ cluster-deploy-list:
 
 # Forward UDP telemetry from node 0 (127.0.0.1:9100) to your Mac via iptables NAT
 cluster-telemetry-forward mac_ip='192.168.105.1':
+  limactl shell mpi0 -- sudo apt-get update -qq
   limactl shell mpi0 -- sudo apt-get install -y -qq socat
   limactl shell mpi0 -- sudo bash -c 'nohup socat UDP-LISTEN:9100,bind=127.0.0.1,fork UDP-SENDTO:192.168.105.1:9100 > /dev/null 2>&1 &'

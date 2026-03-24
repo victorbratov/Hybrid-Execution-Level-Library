@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BREW_PREFIX="$(brew --prefix)"
 
 PREFIX="mpi"
 SSH_KEY="$HOME/.ssh/lima_mpi_key"
@@ -67,7 +68,7 @@ generate_node_config() {
 
   cat >"${TEMPLATE_DIR}/${name}.yaml" <<EOF
 images:
-  - location: "https://cloud-images.ubuntu.com/minimal/releases/24.04/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
+  - location: "https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img"
     arch: "x86_64"
 
 cpus: ${cores}
@@ -79,7 +80,7 @@ firmware:
   legacyBIOS: true
 
 networks:
-  - socket: "/var/run/socket_vmnet"
+  - socket: "${BREW_PREFIX}/var/run/socket_vmnet"
 
 mounts: []
 

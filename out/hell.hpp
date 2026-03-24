@@ -855,37 +855,44 @@ class Planner {
 			sd.concurrency = stage->requested_concurrency;
 
 			uint16_t best_node = 0;
-			if (stage->type_ == StageType::SOURCE || stage->type_ == StageType::SINK) {
+			if (stage->type_ == StageType::SOURCE) {
+				// SOURCE is always pinned to Node 0
 				best_node = 0;
 			} else {
-				if (world_size > 1) {
-					// Prefer collocating with the previous stage to avoid MPI overhead
-					uint16_t prev_node = (i > 0) ? wp.stages[i - 1].assigned_node : 0;
-					if (remaining_cores[prev_node] > 0) {
-						best_node = prev_node;
-					} else {
-						// Fall back: pick the node with the most remaining cores
-						best_node = 1;
-						for (uint16_t node = 1; node < world_size; ++node) {
-							if (remaining_cores[node] > remaining_cores[best_node]) {
-								best_node = node;
-							}
+				uint16_t prev_node = (i > 0) ? wp.stages[i - 1].assigned_node : 0;
+
+				// 1. Try collocation: If it fits on the previous node, keep it there
+				// to benefit from shared-memory zero-latency communication.
+				if (remaining_cores[prev_node] >= (int)sd.concurrency) {
+					best_node = prev_node;
+				} else {
+					// 2. Global Load Balancing: Find node with the most remaining cores
+					best_node = 0;
+					for (uint16_t node = 1; node < world_size; ++node) {
+						if (remaining_cores[node] > remaining_cores[best_node]) {
+							best_node = node;
 						}
 					}
-				} else {
-					best_node = 0;
 				}
 			}
-			sd.assigned_node    = best_node;
-			sd.assigned_threads = std::min((int)sd.concurrency, std::max(1, (int)remaining_cores[best_node]));
+
+			sd.assigned_node = best_node;
+
+			// Handle potential oversubscription: Allocate at least 1 thread
+			if (remaining_cores[best_node] < (int)sd.concurrency) {
+				sd.assigned_threads = std::max(1, remaining_cores[best_node]);
+			} else {
+				sd.assigned_threads = sd.concurrency;
+			}
 
 			remaining_cores[best_node] -= sd.assigned_threads;
 
 			sd.previous_stage_id = (i > 0) ? i - 1 : UINT32_MAX;
 			sd.next_stage_id     = (i < wp.num_stages - 1) ? i + 1 : UINT32_MAX;
 
-			sd.input_tag  = (i > 0) ? (int)(i - 1) * 100 : -1;
-			sd.output_tag = (i < wp.num_stages - 1) ? (int)i * 100 : -1;
+			// Predictable tagging based on stage ID
+			sd.input_tag  = (i > 0) ? (int)i : -1;
+			sd.output_tag = (i < wp.num_stages - 1) ? (int)(i + 1) : -1;
 
 			wp.stages.push_back(sd);
 		}
@@ -947,6 +954,9 @@ class PlanSerializer {
 		WorkflowPlan wp;
 		size_t       offset = 0;
 		auto         pop    = [&](void* data, size_t size) {
+                        if (offset + size > buf.size()) {
+                                throw std::runtime_error("Plan deserialization failed: buffer underflow");
+                        }
                         std::memcpy(data, buf.data() + offset, size);
                         offset += size;
 		};
